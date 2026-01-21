@@ -7,13 +7,8 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHash, PasswordVerifier},
-};
 use chrono::Utc;
 use dotenvy::dotenv;
-use jsonwebtoken::{EncodingKey, Header, encode};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,12 +27,12 @@ use tracing_subscriber::EnvFilter;
 
 use btc_forum_rust::{
     auth::AuthClaims,
+    rainbow_auth::{RainbowAuthClient, RainbowAuthError, RainbowUser},
     security::load_permissions,
     services::{
         BanAffects, BanCondition, BanRule, ForumContext, ForumService, PersonalMessageFolder,
         SendPersonalMessage, surreal::SurrealService,
     },
-    subs_auth::hash_password,
     surreal::{SurrealClient, SurrealForumService, SurrealPost, SurrealTopic, SurrealUser, connect_from_env},
 };
 use tower_http::cors::CorsLayer;
@@ -46,6 +41,7 @@ use tower_http::cors::CorsLayer;
 struct AppState {
     surreal: SurrealForumService,
     forum_service: SurrealService,
+    rainbow_auth: RainbowAuthClient,
     rate_limiter: Arc<RateLimiter>,
     start_time: Instant,
 }
@@ -96,7 +92,8 @@ impl RateLimiter {
 
 #[derive(Deserialize)]
 struct RegisterRequest {
-    username: String,
+    #[serde(alias = "username")]
+    email: String,
     password: String,
     role: Option<String>,
     permissions: Option<Vec<String>>,
@@ -104,7 +101,8 @@ struct RegisterRequest {
 
 #[derive(Deserialize)]
 struct LoginRequest {
-    username: String,
+    #[serde(alias = "username")]
+    email: String,
     password: String,
 }
 
@@ -126,6 +124,10 @@ fn upload_dir() -> PathBuf {
 
 fn upload_base_url() -> String {
     env::var("UPLOAD_BASE_URL").unwrap_or_else(|_| "/uploads".into())
+}
+
+fn rainbow_auth_base_url() -> String {
+    env::var("RAINBOW_AUTH_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into())
 }
 
 fn max_upload_bytes() -> i64 {
@@ -159,11 +161,17 @@ fn validate_config() {
     if !has_secret && !has_pub {
         panic!("either JWT_SECRET or JWT_PUBLIC_KEY_PEM must be set for JWT validation");
     }
+    if has_pub {
+        tracing::warn!("JWT_PUBLIC_KEY_PEM is set; Rainbow-Auth uses HS256, so prefer JWT_SECRET");
+    }
     if !csrf_enabled() {
         tracing::warn!("ENFORCE_CSRF=0 (CSRF protection disabled)");
     }
     if env::var("SURREAL_ENDPOINT").ok().map(|v| v.is_empty()).unwrap_or(false) {
         panic!("SURREAL_ENDPOINT cannot be empty");
+    }
+    if rainbow_auth_base_url().trim().is_empty() {
+        panic!("RAINBOW_AUTH_BASE_URL cannot be empty");
     }
 }
 
@@ -176,44 +184,6 @@ fn require_auth(claims: &Option<AuthClaims>) -> Result<&AuthClaims, impl IntoRes
             Json(json!({"status": "error", "message": "authorization required"})),
         ))
     }
-}
-
-fn jwt_ttl_secs() -> i64 {
-    env::var("JWT_TTL_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3600)
-}
-
-fn issue_token_for_user(
-    user: &SurrealUser,
-) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
-    let now = Utc::now().timestamp();
-    let claims = AuthClaims {
-        sub: user.name.clone(),
-        exp: now + jwt_ttl_secs(),
-        iat: now,
-        role: user.role.clone(),
-        permissions: user.permissions.clone(),
-        session_id: None,
-    };
-    let secret = env::var("JWT_SECRET").map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"status": "error", "message": "token signing disabled (JWT_SECRET not set)"})),
-        )
-    })?;
-    encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"status": "error", "message": "failed to sign token"})),
-        )
-    })
 }
 
 fn build_ctx_from_user(user: &SurrealUser, claims: &AuthClaims) -> ForumContext {
@@ -256,37 +226,31 @@ fn build_ctx_from_user(user: &SurrealUser, claims: &AuthClaims) -> ForumContext 
     ctx
 }
 
-fn verify_password_hash(password: &str, stored: Option<&str>) -> bool {
-    let Some(stored) = stored else {
-        return false;
-    };
-    if stored.is_empty() {
-        return false;
-    }
-    if stored.starts_with("$argon2") {
-        if let Ok(parsed) = PasswordHash::new(stored) {
-            return Argon2::default()
-                .verify_password(password.as_bytes(), &parsed)
-                .is_ok();
-        }
-    }
-    password == stored
-}
-
 async fn ensure_user_ctx(
     state: &AppState,
     claims: &AuthClaims,
 ) -> Result<(SurrealUser, ForumContext), (StatusCode, Json<serde_json::Value>)> {
+    let resolved_user = resolve_rainbow_user(state, claims).await;
+    let name = resolved_user
+        .as_ref()
+        .map(|user| user.email.as_str())
+        .unwrap_or(&claims.sub);
     match state
         .surreal
         .ensure_user(
-            &claims.sub,
+            name,
             claims.role.as_deref(),
             claims.permissions.as_deref(),
         )
         .await
     {
         Ok(user) => {
+            if let Some(user_info) = resolved_user {
+                let mut user = user;
+                user.name = user_info.email;
+                let ctx = build_ctx_from_user(&user, claims);
+                return Ok((user, ctx));
+            }
             let ctx = build_ctx_from_user(&user, claims);
             Ok((user, ctx))
         }
@@ -296,6 +260,20 @@ async fn ensure_user_ctx(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"status": "error", "message": "failed to ensure user"})),
             ))
+        }
+    }
+}
+
+async fn resolve_rainbow_user(
+    state: &AppState,
+    claims: &AuthClaims,
+) -> Option<RainbowUser> {
+    let token = claims.token.as_deref()?;
+    match state.rainbow_auth.me(token).await {
+        Ok(user) => Some(user),
+        Err(err) => {
+            error!(error = %err, "rainbow-auth user lookup failed");
+            None
         }
     }
 }
@@ -315,6 +293,21 @@ fn ensure_permission(
                 "message": format!("missing permission: {permission}")
             })),
         ))
+    }
+}
+
+fn rainbow_auth_error_response(
+    err: RainbowAuthError,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match err {
+        RainbowAuthError::Http { status, message } => (
+            status,
+            Json(json!({"status": "error", "message": message})),
+        ),
+        RainbowAuthError::Transport(message) | RainbowAuthError::Parse(message) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"status": "error", "message": message})),
+        ),
     }
 }
 
@@ -684,11 +677,13 @@ async fn main() {
         .expect("failed to connect to SurrealDB");
     let surreal = SurrealForumService::new(surreal);
     let forum_service = SurrealService::new(surreal.client().clone());
+    let rainbow_auth = RainbowAuthClient::new(rainbow_auth_base_url());
     let cors_origin =
         env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
     let state = AppState {
         surreal,
         forum_service,
+        rainbow_auth,
         rate_limiter: Arc::new(RateLimiter::new()),
         start_time: Instant::now(),
     };
@@ -840,11 +835,11 @@ async fn register(
     if let Err(resp) = enforce_rate(&state, &key, 5, Duration::from_secs(60)) {
         return resp;
     }
-    let username = payload.username.trim();
-    if username.len() < 3 || username.len() > 64 {
+    let email = payload.email.trim();
+    if email.is_empty() || !email.contains('@') {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"status": "error", "message": "username must be 3-64 chars"})),
+            Json(json!({"status": "error", "message": "valid email required"})),
         );
     }
     if payload.password.len() < 6 || payload.password.len() > 128 {
@@ -854,63 +849,19 @@ async fn register(
         );
     }
 
-    match state.surreal.user_by_name(username).await {
-        Ok(Some(_)) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({"status": "error", "message": "user already exists"})),
-            );
-        }
-        Ok(None) => {}
-        Err(err) => {
-            error!(error = %err, "failed to query user");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"status": "error", "message": "failed to query user"})),
-            );
-        }
-    }
-
-    let password_hash = match hash_password(&payload.password) {
-        Ok(hash) => hash,
-        Err(err) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"status": "error", "message": err.to_string()})),
-            );
-        }
-    };
-    let role = payload.role.as_deref();
-    let perms_slice = payload.permissions.as_deref();
-    let user = match state
-        .surreal
-        .create_user_with_password(username, role, perms_slice, Some(&password_hash))
+    match state
+        .rainbow_auth
+        .register(email, &payload.password)
         .await
     {
-        Ok(user) => user,
-        Err(err) => {
-            error!(error = %err, "failed to create user");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"status": "error", "message": "failed to create user"})),
-            );
-        }
-    };
-
-    match issue_token_for_user(&user) {
-        Ok(token) => (
-            StatusCode::CREATED,
+        Ok(message) => (
+            StatusCode::OK,
             Json(json!({
                 "status": "ok",
-                "token": token,
-                "user": {
-                    "name": user.name,
-                    "role": user.role,
-                    "permissions": user.permissions.unwrap_or_default(),
-                }
+                "message": message
             })),
         ),
-        Err(resp) => resp,
+        Err(err) => rainbow_auth_error_response(err),
     }
 }
 
@@ -923,50 +874,45 @@ async fn login(
     if let Err(resp) = enforce_rate(&state, &key, 10, Duration::from_secs(60)) {
         return resp;
     }
-    let username = payload.username.trim();
-    if username.is_empty() {
+    let email = payload.email.trim();
+    if email.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"status": "error", "message": "username required"})),
-        );
-    }
-    let user = match state.surreal.user_by_name(username).await {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"status": "error", "message": "user not found"})),
-            );
-        }
-        Err(err) => {
-            error!(error = %err, "failed to fetch user");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"status": "error", "message": "failed to fetch user"})),
-            );
-        }
-    };
-    if !verify_password_hash(&payload.password, user.password_hash.as_deref()) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"status": "error", "message": "invalid credentials"})),
+            Json(json!({"status": "error", "message": "email required"})),
         );
     }
 
-    match issue_token_for_user(&user) {
-        Ok(token) => (
-            StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "token": token,
-                "user": {
-                    "name": user.name,
-                    "role": user.role,
-                    "permissions": user.permissions.unwrap_or_default(),
-                }
-            })),
-        ),
-        Err(resp) => resp,
+    match state
+        .rainbow_auth
+        .login(email, &payload.password)
+        .await
+    {
+        Ok(login) => {
+            if let Err(err) = state
+                .surreal
+                .ensure_user(&login.user.email, None, None)
+                .await
+            {
+                error!(error = %err, "failed to ensure user after login");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"status": "error", "message": "failed to sync user"})),
+                );
+            }
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": "ok",
+                    "token": login.token,
+                    "user": {
+                        "name": login.user.email,
+                        "role": null,
+                        "permissions": Vec::<String>::new(),
+                    }
+                })),
+            )
+        }
+        Err(err) => rainbow_auth_error_response(err),
     }
 }
 

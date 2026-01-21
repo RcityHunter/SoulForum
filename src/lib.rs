@@ -31,6 +31,7 @@ pub mod profile_actions;
 pub mod profile_export;
 pub mod profile_modify;
 pub mod profile_view;
+pub mod rainbow_auth;
 pub mod register;
 pub mod security;
 pub mod services;

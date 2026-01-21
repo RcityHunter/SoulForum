@@ -55,6 +55,8 @@ struct PostResponse { status: String, post: Post }
 struct AuthResponse { status: String, token: String, user: AuthUser }
 #[derive(Deserialize)]
 struct AuthUser { name: String, role: Option<String>, permissions: Option<Vec<String>> }
+#[derive(Deserialize)]
+struct RegisterResponse { status: String, message: String }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 struct BoardAccessEntry { id: String, name: String, allowed_groups: Vec<i64> }
@@ -103,9 +105,9 @@ struct BanRuleView { id: i64, expires_at: Option<String>, reason: Option<String>
 struct BanListResponse { status: String, bans: Vec<BanRuleView> }
 
 #[derive(Serialize)]
-struct LoginPayload { username: String, password: String }
+struct LoginPayload { email: String, password: String }
 #[derive(Serialize)]
-struct RegisterPayload { username: String, password: String, role: Option<String>, permissions: Option<Vec<String>> }
+struct RegisterPayload { email: String, password: String }
 #[derive(Serialize)]
 struct CreateBoardPayload { name: String, description: Option<String> }
 #[derive(Serialize)]
@@ -160,7 +162,6 @@ fn App() -> Element {
     let mut login_password = use_signal(|| "".to_string());
     let mut register_username = use_signal(|| "".to_string());
     let mut register_password = use_signal(|| "".to_string());
-    let register_admin = use_signal(|| false);
 
     let boards = use_signal(Vec::<Board>::new);
     let mut topics = use_signal(Vec::<Topic>::new);
@@ -200,12 +201,12 @@ fn App() -> Element {
         let mut status = status.clone();
         let mut token_sig = token.clone();
         if user.is_empty() || pass.is_empty() {
-            status.set("请输入用户名和密码".into());
+            status.set("请输入邮箱和密码".into());
             return;
         }
         spawn(async move {
             status.set("登录中...".into());
-            let payload = LoginPayload { username: user.clone(), password: pass.clone() };
+            let payload = LoginPayload { email: user.clone(), password: pass.clone() };
             match post_json::<AuthResponse, _>(&base, "/auth/login", "", "", &payload).await {
                 Ok(resp) => {
                     save_token_to_storage(&resp.token);
@@ -221,27 +222,17 @@ fn App() -> Element {
         let base = api_base.read().clone();
         let user = register_username.read().clone();
         let pass = register_password.read().clone();
-        let admin_flag = *register_admin.read();
         let mut status = status.clone();
-        let mut token_sig = token.clone();
         if user.is_empty() || pass.is_empty() {
-            status.set("请输入注册用户名和密码".into());
+            status.set("请输入邮箱和密码".into());
             return;
         }
-        let role = if admin_flag { Some("admin".to_string()) } else { None };
-        let perms = if admin_flag {
-            Some(vec!["post_new".into(), "post_reply_any".into(), "manage_boards".into(), "admin".into()])
-        } else {
-            Some(vec!["post_new".into(), "post_reply_any".into()])
-        };
         spawn(async move {
             status.set("注册中...".into());
-            let payload = RegisterPayload { username: user.clone(), password: pass.clone(), role, permissions: perms };
-            match post_json::<AuthResponse, _>(&base, "/auth/register", "", "", &payload).await {
+            let payload = RegisterPayload { email: user.clone(), password: pass.clone() };
+            match post_json::<RegisterResponse, _>(&base, "/auth/register", "", "", &payload).await {
                 Ok(resp) => {
-                    save_token_to_storage(&resp.token);
-                    token_sig.set(resp.token);
-                    status.set(format!("注册成功并登录：{}", resp.user.name));
+                    status.set(resp.message);
                 }
                 Err(err) => status.set(format!("注册失败：{err}")),
             }
@@ -265,6 +256,26 @@ fn App() -> Element {
                     status.set("版块加载完成".into());
                 }
                 Err(err) => status.set(format!("加载版块失败：{err}")),
+            }
+        });
+    };
+
+    let check_health = move || {
+        let base = api_base.read().clone();
+        let mut status = status.clone();
+        spawn(async move {
+            status.set("健康检查中...".into());
+            match get_json::<serde_json::Value>(&base, "/health", "", "").await {
+                Ok(resp) => {
+                    let service = resp.get("service").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let surreal = resp
+                        .get("surreal")
+                        .and_then(|v| v.get("status"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    status.set(format!("健康检查: {service} / surreal: {surreal}"));
+                }
+                Err(err) => status.set(format!("健康检查失败：{err}")),
             }
         });
     };
@@ -699,6 +710,7 @@ fn App() -> Element {
                             div { class: "actions",
                                 button { onclick: move |_| status.set("已更新 API 基址".into()), "更新" }
                                 button { onclick: move |_| load_boards(), "加载数据" }
+                                button { onclick: move |_| check_health(), "健康检查" }
                             }
                         }
                         div {
@@ -713,24 +725,16 @@ fn App() -> Element {
                     div { class: "grid two gap",
                         div { class: "card-ghost",
                             h4 { "登录" }
-                            input { value: "{login_username.read()}", oninput: move |evt| login_username.set(evt.value()), placeholder: "用户名" }
+                            input { value: "{login_username.read()}", oninput: move |evt| login_username.set(evt.value()), placeholder: "邮箱" }
                             input { value: "{login_password.read()}", oninput: move |evt| login_password.set(evt.value()), placeholder: "密码", r#type: "password" }
                             div { class: "actions", button { onclick: move |_| login(), "登录" } }
                         }
                         div { class: "card-ghost",
                             h4 { "注册" }
-                            input { value: "{register_username.read()}", oninput: move |evt| register_username.set(evt.value()), placeholder: "用户名" }
+                            p { class: "muted", "注册后需前往 Rainbow-Auth 邮箱验证完成激活。" }
+                            input { value: "{register_username.read()}", oninput: move |evt| register_username.set(evt.value()), placeholder: "邮箱" }
                             input { value: "{register_password.read()}", oninput: move |evt| register_password.set(evt.value()), placeholder: "密码", r#type: "password" }
-                            {
-                                let mut reg = register_admin.clone();
-                                rsx! {
-                                    div { class: "checkbox",
-                                        input { r#type: "checkbox", checked: "{*reg.read()}", oninput: move |_| { let current = *reg.read(); reg.set(!current); } }
-                                        span { "注册为 Admin（默认 member）" }
-                                    }
-                                }
-                            }
-                            div { class: "actions", button { onclick: move |_| register(), "注册并登录" } }
+                            div { class: "actions", button { onclick: move |_| register(), "注册" } }
                         }
                     }
                 }
@@ -991,6 +995,7 @@ fn App() -> Element {
                             div { class: "actions",
                                 button { onclick: move |_| status.set("已更新 API 基址".into()), "更新" }
                                 button { onclick: move |_| load_access(), "加载数据" }
+                                button { onclick: move |_| check_health(), "健康检查" }
                             }
                         }
                         div {

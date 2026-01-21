@@ -6,6 +6,7 @@
 - 准备：安装 Rust 1.75+。仓库无额外系统依赖。
 - 构建：`cargo build`（加 `--release` 获取优化产物）。
 - 运行 CLI 示例：`cargo run` 会通过 SurrealService 调用控制器（需 SurrealDB 环境变量），并在终端打印。
+- 启动 Rainbow-Auth：进入 `../Rainbow-Auth` 并按其 README/DEPLOYMENT 启动服务，确保 `JWT_SECRET` 与本服务一致。
 - 启动 HTTP API（Surreal-only，需设置 `SURREAL_ENDPOINT`，可配 `SURREAL_NAMESPACE`/`SURREAL_DATABASE`/`SURREAL_USER`/`SURREAL_PASS`）：`cargo run --bin api`，默认监听 `127.0.0.1:3000`。健康检查 `/health`，写接口（`/surreal/post`、`/surreal/topics`、`/surreal/topic/posts`、`/demo/post` 等）需 Bearer JWT，匿名将返回 401；读接口可匿名访问。JWT 中的 `role`/`permissions` 会写入用户上下文，若用户在 Surreal 未存在会按 `sub` 创建，模型字段约定见 `docs/surreal_schema.md`。当前权限要求：创建版块需 `manage_boards`，创建主题需 `post_new`，回帖需 `post_reply_any`（缺省时会为普通用户填充 `post_new`/`post_reply_any` 便于演示）。
 - 简易前端：启动后访问 `http://127.0.0.1:3000/ui`，可填 JWT 调用示例接口。
 - Dioxus 前端：`cd frontend && cargo install dioxus-cli` 后运行 `dx serve --platform web --addr 127.0.0.1 --port 8080`，页面里将 API 基址设为 `http://127.0.0.1:3000`。打包用 `dx build --platform web`，产物位于 `frontend/dist/`。
@@ -15,14 +16,20 @@
   - `/surreal/topics`（GET `?board_id=...` / POST `{board_id, subject, body}`）创建/列出主题；
   - `/surreal/topic/posts`（GET `?topic_id=...` / POST `{topic_id, board_id, body, subject?}`）在主题下发帖或查看帖子；
   - `/surreal/post` + `/surreal/posts` 简单写入/列表。
-  - `/auth/register`（POST `{username, password, role?, permissions?}`）创建用户并返回 JWT；`/auth/login`（POST `{username, password}`）验证后返回 JWT。默认 JWT 过期时间可由 `JWT_TTL_SECS` 控制（默认 3600 秒）。
+  - 认证（Rainbow-Auth）：`/auth/register`（POST `{email, password}`）会转发至 Rainbow-Auth 并返回注册提示信息（需邮箱验证）；`/auth/login`（POST `{email, password}`）返回 Rainbow-Auth 签发的 JWT。务必保证本服务的 `JWT_SECRET` 与 Rainbow-Auth 一致。
 - 数据库迁移：Surreal 版脚本在 `migrations/surreal/0001_init.surql`（默认命名空间 `auth`、数据库 `main`），可用 `surreal sql --conn $SURREAL_ENDPOINT --user $SURREAL_USER --pass $SURREAL_PASS --ns ${SURREAL_NAMESPACE:-auth} --db ${SURREAL_DATABASE:-main} -f migrations/surreal/0001_init.surql` 应用。旧的 `migrations/0001_init.sql` 是 Postgres 示例，可忽略。
 - 格式化：`cargo fmt`
 - 静态检查：`cargo clippy -- -D warnings`
 - 测试：目前无测试，可按惯例添加 `#[cfg(test)]` 单测或 `tests/` 集成测，运行 `cargo test`。
 
+## 文档索引
+- API 速览：`docs/api.md`
+- 部署与配置：`docs/deployment.md`
+- Dioxus 前端：`docs/frontend.md`
+- Surreal Schema：`docs/surreal_schema.md`
+
 ## 配置与监控
-- 环境变量：`SURREAL_ENDPOINT`（必填）、`SURREAL_NAMESPACE`、`SURREAL_DATABASE`、`SURREAL_USER`、`SURREAL_PASS`、`JWT_SECRET`、`BIND_ADDR`（默认 `127.0.0.1:3000`），示例见 `.env.example`。开发期可用 `ENFORCE_CSRF=0` 暂停 CSRF 校验（默认开启）。
+- 环境变量：`SURREAL_ENDPOINT`（必填）、`SURREAL_NAMESPACE`、`SURREAL_DATABASE`、`SURREAL_USER`、`SURREAL_PASS`、`JWT_SECRET`（需与 Rainbow-Auth 保持一致）、`RAINBOW_AUTH_BASE_URL`、`BIND_ADDR`（默认 `127.0.0.1:3000`），示例见 `.env.example`。开发期可用 `ENFORCE_CSRF=0` 暂停 CSRF 校验（默认开启）。
 - 安全：写接口必须携带 Bearer JWT，已启用内容长度校验与用户+IP 限流（默认 60 秒窗口，接口不同上限）；CORS 允许 `http://127.0.0.1:8080`（可用 `CORS_ORIGIN` 覆盖），默认允许凭据便于 Cookie/CSRF。
 - 观测：新增 `/metrics` 简单返回服务启动时长与当前限流 key 计数（仅开发用途）。
 - 日志：启用 tracing，HTTP 请求使用 `TraceLayer` 打印基础请求日志；管理/通知错误会记审计日志表。

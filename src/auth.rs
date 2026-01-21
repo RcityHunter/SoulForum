@@ -20,6 +20,8 @@ pub struct AuthClaims {
     pub role: Option<String>,
     pub permissions: Option<Vec<String>>,
     pub session_id: Option<String>,
+    #[serde(default, skip)]
+    pub token: Option<String>,
 }
 
 /// Rejection type returned when auth fails.
@@ -84,8 +86,9 @@ where
 
         let (decoding_key, validation) = decoding_config()?;
 
-        let token_data =
+        let mut token_data =
             decode::<AuthClaims>(bearer.token(), decoding_key, validation).map_err(|_| AuthError::InvalidToken)?;
+        token_data.claims.token = Some(bearer.token().to_string());
 
         Ok(token_data.claims)
     }
