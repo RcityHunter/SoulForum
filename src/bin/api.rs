@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     body::{Body, Bytes},
     extract::{ConnectInfo, Multipart, Path, Query, State},
-    http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header::HeaderName},
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header::{HeaderName, AUTHORIZATION}},
     middleware::Next,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 use btc_forum_rust::{
     auth::AuthClaims,
+    services::{BoardAccessEntry, ForumError},
     rainbow_auth::{RainbowAuthClient, RainbowAuthError, RainbowUser},
     security::load_permissions,
     services::{
@@ -186,6 +187,16 @@ fn require_auth(claims: &Option<AuthClaims>) -> Result<&AuthClaims, impl IntoRes
     }
 }
 
+fn bearer_from_headers(headers: &HeaderMap) -> Option<String> {
+    let header = headers.get(AUTHORIZATION)?;
+    let value = header.to_str().ok()?.trim();
+    let token = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))?;
+    let token = token.trim();
+    if token.is_empty() { None } else { Some(token.to_string()) }
+}
+
 fn build_ctx_from_user(user: &SurrealUser, claims: &AuthClaims) -> ForumContext {
     let mut ctx = ForumContext::default();
     ctx.user_info.is_guest = false;
@@ -343,7 +354,25 @@ fn user_groups(ctx: &ForumContext) -> Vec<i64> {
     vec![1]
 }
 
-fn ensure_board_access(
+async fn load_board_access(state: &AppState) -> Result<Vec<BoardAccessEntry>, ForumError> {
+    let forum_service = state.forum_service.clone();
+    tokio::task::spawn_blocking(move || forum_service.list_board_access())
+        .await
+        .map_err(|e| ForumError::Internal(format!("board access task failed: {e}")))?
+}
+
+async fn run_forum_blocking<R, F>(state: &AppState, job: F) -> Result<R, ForumError>
+where
+    R: Send + 'static,
+    F: FnOnce(SurrealService) -> Result<R, ForumError> + Send + 'static,
+{
+    let forum_service = state.forum_service.clone();
+    tokio::task::spawn_blocking(move || job(forum_service))
+        .await
+        .map_err(|e| ForumError::Internal(format!("forum task failed: {e}")))?
+}
+
+async fn ensure_board_access(
     state: &AppState,
     ctx: &ForumContext,
     board_id: &str,
@@ -351,7 +380,7 @@ fn ensure_board_access(
     if ctx.user_info.is_admin {
         return Ok(());
     }
-    let entries = match state.forum_service.list_board_access() {
+    let entries: Vec<BoardAccessEntry> = match load_board_access(state).await {
         Ok(entries) => entries,
         Err(err) => {
             error!(error = %err, "failed to load board access");
@@ -692,6 +721,7 @@ async fn main() {
         .route("/metrics", get(metrics))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/me", get(auth_me))
         .route("/ui", get(ui))
         .route("/demo/post", post(demo_post))
         .route("/demo/surreal", post(demo_surreal))
@@ -727,10 +757,6 @@ async fn main() {
         .route(
             "/surreal/personal_messages/delete",
             post(delete_personal_messages_api),
-        )
-        .route(
-            "/surreal/notifications/mark_read",
-            post(mark_notification_read),
         )
         .route(
             "/surreal/boards",
@@ -888,17 +914,21 @@ async fn login(
         .await
     {
         Ok(login) => {
-            if let Err(err) = state
+            let forum_user = match state
                 .surreal
                 .ensure_user(&login.user.email, None, None)
                 .await
             {
-                error!(error = %err, "failed to ensure user after login");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"status": "error", "message": "failed to sync user"})),
-                );
-            }
+                Ok(user) => user,
+                Err(err) => {
+                    error!(error = %err, "failed to ensure user after login");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"status": "error", "message": "failed to sync user"})),
+                    );
+                }
+            };
+            let member_id = forum_user.legacy_id();
             (
                 StatusCode::OK,
                 Json(json!({
@@ -908,6 +938,45 @@ async fn login(
                         "name": login.user.email,
                         "role": null,
                         "permissions": Vec::<String>::new(),
+                        "member_id": member_id,
+                    }
+                })),
+            )
+        }
+        Err(err) => rainbow_auth_error_response(err),
+    }
+}
+
+async fn auth_me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(token) = bearer_from_headers(&headers) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"status": "error", "message": "authorization required"})),
+        );
+    };
+
+    match state.rainbow_auth.me(&token).await {
+        Ok(user) => {
+            let member_id = match state
+                .surreal
+                .ensure_user(&user.email, None, None)
+                .await
+            {
+                Ok(forum_user) => forum_user.legacy_id(),
+                Err(err) => {
+                    error!(error = %err, "failed to sync user for auth/me");
+                    0
+                }
+            };
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": "ok",
+                    "user": {
+                        "name": user.email,
+                        "role": null,
+                        "permissions": Vec::<String>::new(),
+                        "member_id": member_id,
                     }
                 })),
             )
@@ -1043,7 +1112,7 @@ async fn surreal_post(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id) {
+    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id).await {
         return resp.into_response();
     }
     if let Err(resp) = ensure_permission_for_board(&state, &ctx, "post_new", Some(&payload.board_id))
@@ -1168,7 +1237,7 @@ async fn surreal_boards(
             ctx = c;
         }
     }
-    let access_rules = state.forum_service.list_board_access().ok();
+    let access_rules: Option<Vec<BoardAccessEntry>> = load_board_access(&state).await.ok();
     match state.surreal.list_boards().await {
         Ok(boards) => {
             let filtered = match access_rules {
@@ -1240,7 +1309,7 @@ async fn create_surreal_topic(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id) {
+    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id).await {
         return resp.into_response();
     }
     if let Err(resp) = ensure_permission_for_board(&state, &ctx, "post_new", Some(&payload.board_id))
@@ -1306,7 +1375,7 @@ async fn list_surreal_topics(
             ctx = c;
         }
     }
-    if let Err(resp) = ensure_board_access(&state, &ctx, &params.board_id) {
+    if let Err(resp) = ensure_board_access(&state, &ctx, &params.board_id).await {
         return resp.into_response();
     }
     match state.surreal.list_topics(&params.board_id).await {
@@ -1363,7 +1432,7 @@ async fn create_surreal_topic_post(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id) {
+    if let Err(resp) = ensure_board_access(&state, &ctx, &payload.board_id).await {
         return resp.into_response();
     }
     // Basic XSS mitigation by sanitizing HTML content
@@ -1417,7 +1486,7 @@ async fn list_surreal_posts_for_topic(
         }
     }
     if let Some(board_id) = fetch_topic_board_id(state.surreal.client(), &params.topic_id).await {
-        if let Err(resp) = ensure_board_access(&state, &ctx, &board_id) {
+        if let Err(resp) = ensure_board_access(&state, &ctx, &board_id).await {
             return resp.into_response();
         }
     }
@@ -1962,15 +2031,11 @@ async fn list_personal_messages(
         _ => PersonalMessageFolder::Inbox,
     };
     let limit = query.limit.unwrap_or(50).min(200);
-    match state
-        .forum_service
-        .personal_message_page(
-            ctx.user_info.id,
-            folder.clone(),
-            query.label,
-            query.offset.unwrap_or(0),
-            limit,
-        ) {
+    let offset = query.offset.unwrap_or(0);
+    let label = query.label;
+    match run_forum_blocking(&state, move |forum| {
+        forum.personal_message_page(ctx.user_info.id, folder.clone(), label, offset, limit)
+    }).await {
         Ok(page) => (
             StatusCode::OK,
             Json(json!({"status": "ok", "messages": page.messages, "folder": folder, "total": page.total, "unread": page.unread})),
@@ -2027,19 +2092,27 @@ async fn send_personal_message_api(
     };
 
     // resolve recipient ids by name
-    let mut recipient_ids = Vec::new();
-    for name in &payload.to {
-        match state.forum_service.find_member_by_name(name) {
-            Ok(Some(member)) => recipient_ids.push(member.id),
-            _ => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"status": "error", "message": format!("unknown recipient: {name}")})),
-                )
-                    .into_response();
+    let recipients = payload.to.clone();
+    let recipient_ids = match run_forum_blocking(&state, move |forum| {
+        let mut ids = Vec::new();
+        for name in recipients {
+            match forum.find_member_by_name(&name) {
+                Ok(Some(member)) => ids.push(member.id),
+                _ => return Err(ForumError::Validation(format!("unknown recipient: {name}"))),
             }
         }
-    }
+        Ok(ids)
+    })
+    .await {
+        Ok(ids) => ids,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"status": "error", "message": err.to_string()})),
+            )
+                .into_response();
+        }
+    };
 
     let message = SendPersonalMessage {
         sender_id: ctx.user_info.id,
@@ -2049,7 +2122,7 @@ async fn send_personal_message_api(
         subject: sanitize_input(&payload.subject),
         body: sanitize_input(&payload.body),
     };
-    match state.forum_service.send_personal_message(message) {
+    match run_forum_blocking(&state, move |forum| forum.send_personal_message(message)).await {
         Ok(result) => (
             StatusCode::CREATED,
             Json(json!({"status": "ok", "sent_to": result.recipient_ids})),
@@ -2090,10 +2163,8 @@ async fn mark_personal_messages_read(
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
-    match state
-        .forum_service
-        .mark_personal_messages(ctx.user_info.id, &payload.ids, true)
-    {
+    let ids = payload.ids.clone();
+    match run_forum_blocking(&state, move |forum| forum.mark_personal_messages(ctx.user_info.id, &ids, true)).await {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({"status": "ok", "ids": payload.ids})),
@@ -2134,11 +2205,11 @@ async fn delete_personal_messages_api(
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
-    match state.forum_service.delete_personal_messages(
-        ctx.user_info.id,
-        PersonalMessageFolder::Inbox,
-        &payload.ids,
-    ) {
+    let ids = payload.ids.clone();
+    match run_forum_blocking(&state, move |forum| {
+        forum.delete_personal_messages(ctx.user_info.id, PersonalMessageFolder::Inbox, &ids)
+    })
+    .await {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({"status": "ok", "ids": payload.ids})),
@@ -2248,7 +2319,7 @@ async fn list_users(
     if let Err(resp) = ensure_admin(&ctx) {
         return resp.into_response();
     }
-    match state.forum_service.list_members() {
+    match run_forum_blocking(&state, move |forum| forum.list_members()).await {
         Ok(members) => {
             let filtered: Vec<_> = members
                 .into_iter()
@@ -2559,7 +2630,7 @@ async fn get_board_access(
     if let Err(resp) = ensure_admin(&ctx) {
         return resp.into_response();
     }
-    match state.forum_service.list_board_access() {
+    match load_board_access(&state).await {
         Ok(entries) => (
             StatusCode::OK,
             Json(json!({"status": "ok", "entries": entries})),

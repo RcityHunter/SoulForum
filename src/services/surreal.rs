@@ -2549,13 +2549,11 @@ impl ForumService for SurrealService {
         #[derive(Deserialize)]
         struct PmRow {
             pm_id: i64,
-            _owner_id: i64,
             sender_id: i64,
             sender_name: String,
             subject: String,
             body: String,
             is_read: bool,
-            _folder: String,
             created_at_ms: i64,
             recipients: Option<Vec<i64>>,
             labels: Option<Vec<i64>>,
@@ -2571,7 +2569,7 @@ impl ForumService for SurrealService {
 
         let mut base_query = String::from(
             r#"
-            SELECT pm_id, owner_id, sender_id, sender_name, subject, body, is_read, folder, created_at_ms, recipients, labels
+            SELECT pm_id, sender_id, sender_name, subject, body, is_read, created_at_ms, recipients, labels
             FROM personal_messages
             WHERE owner_id = $owner_id AND folder = $folder
             "#,

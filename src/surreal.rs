@@ -584,9 +584,81 @@ pub async fn ensure_user(
     permissions: Option<&[String]>,
 ) -> Result<SurrealUser, surrealdb::Error> {
     if let Some(user) = get_user_by_name(client, name).await? {
+        let is_admin = user.role.as_deref() == Some("admin");
+        let has_manage = user
+            .permissions
+            .as_ref()
+            .map(|p| p.iter().any(|perm| perm == "manage_boards"))
+            .unwrap_or(false);
+        if is_admin || has_manage {
+            return Ok(user);
+        }
+
+        #[derive(Deserialize)]
+        struct CountRow {
+            count: i64,
+        }
+        let mut result = client
+            .query("SELECT count() AS count FROM users WHERE role = 'admin' GROUP ALL;")
+            .await?;
+        let rows: Vec<CountRow> = result.take(0).unwrap_or_default();
+        let has_admin = rows.first().map(|row| row.count > 0).unwrap_or(false);
+        if !has_admin {
+            let perms = vec![
+                "manage_boards".to_string(),
+                "post_new".to_string(),
+                "post_reply_any".to_string(),
+            ];
+            let mut response = client
+                .query(
+                    r#"
+                    UPDATE users SET role = $role, permissions = $permissions
+                    WHERE name = $name
+                    RETURN meta::id(id) as id, name, role, permissions, password_hash, created_at;
+                    "#,
+                )
+                .bind(("role", "admin".to_string()))
+                .bind(("permissions", perms.clone()))
+                .bind(("name", name.to_string()))
+                .await?;
+            let updated: Option<SurrealUser> = response.take(0)?;
+            return Ok(updated.unwrap_or_else(|| SurrealUser {
+                id: user.id,
+                name: user.name,
+                role: Some("admin".to_string()),
+                permissions: Some(perms),
+                password_hash: user.password_hash,
+                created_at: user.created_at,
+            }));
+        }
         return Ok(user);
     }
-    create_user(client, name, role, permissions, None).await
+    let mut seed_permissions: Vec<String> = Vec::new();
+    let mut seed_role = role;
+    let mut seed_permissions_ref = permissions;
+
+    if role.is_none() && permissions.is_none() {
+        #[derive(Deserialize)]
+        struct CountRow {
+            count: i64,
+        }
+        let mut result = client
+            .query("SELECT count() AS count FROM users GROUP ALL;")
+            .await?;
+        let rows: Vec<CountRow> = result.take(0).unwrap_or_default();
+        let is_first_user = rows.first().map(|row| row.count == 0).unwrap_or(true);
+        if is_first_user {
+            seed_role = Some("admin");
+            seed_permissions = vec![
+                "manage_boards".to_string(),
+                "post_new".to_string(),
+                "post_reply_any".to_string(),
+            ];
+            seed_permissions_ref = Some(seed_permissions.as_slice());
+        }
+    }
+
+    create_user(client, name, seed_role, seed_permissions_ref, None).await
 }
 
 /// Thin service wrapper to encapsulate SurrealDB forum operations.

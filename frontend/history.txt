@@ -1,0 +1,94 @@
+#V2
+-- SurrealDB schema for BTC Forum (core collections + indexes)
+-- Default namespace/database follow env: SURREAL_NAMESPACE=auth, SURREAL_DATABASE=main.
+-- Apply with:
+-- surreal sql --conn $SURREAL_ENDPOINT --user $SURREAL_USER --pass $SURREAL_PASS --   --ns ${SURREAL_NAMESPACE:-auth} --db ${SURREAL_DATABASE:-main} -f migrations/surreal/0001_init.surql
+-- Core forum entities
+DEFINE TABLE boards SCHEMAFULL;
+DEFINE FIELD name         ON TABLE boards TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD description  ON TABLE boards TYPE option<string>;
+DEFINE FIELD created_at   ON TABLE boards TYPE datetime DEFAULT time::now();
+DEFINE INDEX idx_boards_name       ON TABLE boards COLUMNS name UNIQUE;
+DEFINE INDEX idx_boards_created_at ON TABLE boards COLUMNS created_at;
+DEFINE TABLE topics SCHEMAFULL;
+DEFINE FIELD board_id    ON TABLE topics TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD subject     ON TABLE topics TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD author      ON TABLE topics TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD created_at  ON TABLE topics TYPE datetime DEFAULT time::now();
+DEFINE FIELD updated_at  ON TABLE topics TYPE datetime DEFAULT time::now();
+DEFINE INDEX idx_topics_board        ON TABLE topics COLUMNS board_id;
+DEFINE INDEX idx_topics_created_at   ON TABLE topics COLUMNS created_at;
+DEFINE INDEX idx_topics_board_created ON TABLE topics COLUMNS board_id, created_at;
+DEFINE TABLE posts SCHEMAFULL;
+DEFINE FIELD topic_id    ON TABLE posts TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD board_id    ON TABLE posts TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD subject     ON TABLE posts TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD body        ON TABLE posts TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD author      ON TABLE posts TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD created_at  ON TABLE posts TYPE datetime DEFAULT time::now();
+DEFINE INDEX idx_posts_topic      ON TABLE posts COLUMNS topic_id;
+DEFINE INDEX idx_posts_board      ON TABLE posts COLUMNS board_id;
+DEFINE INDEX idx_posts_created_at ON TABLE posts COLUMNS created_at;
+DEFINE TABLE users SCHEMAFULL;
+DEFINE FIELD name           ON TABLE users TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD role           ON TABLE users TYPE option<string>;
+DEFINE FIELD permissions    ON TABLE users TYPE option<array<string>> VALUE $value ?? [];
+DEFINE FIELD password_hash  ON TABLE users TYPE option<string>;
+DEFINE FIELD created_at     ON TABLE users TYPE datetime DEFAULT time::now();
+DEFINE INDEX idx_users_name ON TABLE users COLUMNS name UNIQUE;
+DEFINE TABLE demo_posts SCHEMALESS;
+DEFINE INDEX idx_demo_posts_created_at ON TABLE demo_posts COLUMNS created_at;
+-- Personal messages
+DEFINE TABLE personal_messages SCHEMALESS;
+DEFINE INDEX idx_pm_owner_folder   ON TABLE personal_messages COLUMNS owner_id, folder, created_at_ms;
+DEFINE INDEX idx_pm_owner_pm_id    ON TABLE personal_messages COLUMNS owner_id, pm_id;
+DEFINE INDEX idx_pm_labels_owner   ON TABLE personal_messages COLUMNS owner_id, labels;
+DEFINE TABLE pm_drafts SCHEMALESS;
+DEFINE INDEX idx_pm_drafts_owner ON TABLE pm_drafts COLUMNS owner_id, saved_at_ms;
+DEFINE TABLE pm_labels SCHEMALESS;
+DEFINE INDEX idx_pm_labels_owner ON TABLE pm_labels COLUMNS owner_id, created_at_ms;
+DEFINE TABLE pm_preferences SCHEMALESS;
+DEFINE INDEX idx_pm_prefs_owner ON TABLE pm_preferences COLUMNS owner_id;
+DEFINE TABLE pm_ignore_lists SCHEMALESS;
+DEFINE INDEX idx_pm_ignore_owner ON TABLE pm_ignore_lists COLUMNS owner_id, ignored_id;
+DEFINE TABLE buddy_lists SCHEMALESS;
+DEFINE INDEX idx_buddies_owner ON TABLE buddy_lists COLUMNS owner_id, buddy_id;
+DEFINE TABLE pm_send_log SCHEMALESS;
+DEFINE INDEX idx_pm_send_log_sender ON TABLE pm_send_log COLUMNS sender_id, created_at_ms;
+-- Attachments & drafts
+DEFINE TABLE attachments SCHEMALESS;
+DEFINE INDEX idx_attachments_msg ON TABLE attachments COLUMNS message_id;
+DEFINE INDEX idx_attachments_owner ON TABLE attachments COLUMNS owner, created_at_ms;
+-- Notifications (站内信占位)
+DEFINE TABLE notifications SCHEMALESS;
+DEFINE INDEX idx_notifications_user ON TABLE notifications COLUMNS user, created_at_ms;
+DEFINE TABLE drafts SCHEMALESS;
+DEFINE INDEX idx_drafts_owner ON TABLE drafts COLUMNS id, board_id, topic_id, poster_time_ms;
+-- Polls
+DEFINE TABLE polls SCHEMALESS;
+DEFINE INDEX idx_polls_topic ON TABLE polls COLUMNS topic_id;
+DEFINE TABLE poll_options SCHEMALESS;
+DEFINE INDEX idx_poll_options_poll ON TABLE poll_options COLUMNS poll_id, option_id;
+-- Groups & permissions
+DEFINE TABLE membergroups SCHEMALESS;
+DEFINE INDEX idx_membergroups_id ON TABLE membergroups COLUMNS id;
+DEFINE TABLE group_members SCHEMALESS;
+DEFINE INDEX idx_group_members_group ON TABLE group_members COLUMNS group_id, member_id;
+DEFINE TABLE membergroup_settings SCHEMALESS;
+DEFINE TABLE permission_groups SCHEMALESS;
+DEFINE TABLE permission_profiles SCHEMALESS;
+DEFINE TABLE alert_prefs SCHEMALESS;
+DEFINE INDEX idx_alert_prefs_member ON TABLE alert_prefs COLUMNS member_id;
+DEFINE TABLE board_access SCHEMALESS;
+DEFINE INDEX idx_board_access_board ON TABLE board_access COLUMNS board_id;
+DEFINE TABLE board_permissions SCHEMALESS;
+DEFINE INDEX idx_board_permissions_board ON TABLE board_permissions COLUMNS board_id, group_id;
+-- Moderation / audit
+DEFINE TABLE ban_rules SCHEMALESS;
+DEFINE INDEX idx_ban_rules_expires ON TABLE ban_rules COLUMNS expires_at_ms;
+DEFINE TABLE ban_logs SCHEMALESS;
+DEFINE INDEX idx_ban_logs_rule ON TABLE ban_logs COLUMNS ban_id, hit_at_ms;
+DEFINE TABLE action_logs SCHEMALESS;
+DEFINE INDEX idx_action_logs_created ON TABLE action_logs COLUMNS created_at_ms;
+-- Calendar / misc
+DEFINE TABLE calendar_events SCHEMALESS;
