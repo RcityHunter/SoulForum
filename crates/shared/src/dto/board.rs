@@ -20,3 +20,9 @@ pub struct CreateBoardPayload {
     pub name: String,
     pub description: Option<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct CreateBoardResponse {
+    pub status: String,
+    pub board: Board,
+}

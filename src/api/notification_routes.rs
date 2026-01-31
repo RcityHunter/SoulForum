@@ -4,12 +4,14 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::Deserialize;
-use serde_json::json;
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
 
 use btc_forum_rust::auth::AuthClaims;
+use btc_forum_shared::{
+    CreateNotificationPayload, MarkNotificationPayload, MarkNotificationResponse,
+    NotificationCreateResponse, NotificationListResponse,
+};
 
 use super::{
     auth::{ensure_user_ctx, require_auth},
@@ -19,16 +21,15 @@ use super::{
     utils::sanitize_input,
 };
 
-#[derive(Deserialize)]
-pub(crate) struct CreateNotificationPayload {
-    pub(crate) user: Option<String>,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct MarkNotificationPayload {
-    pub(crate) id: String,
+fn to_notification(note: btc_forum_rust::surreal::SurrealNotification) -> btc_forum_shared::Notification {
+    btc_forum_shared::Notification {
+        id: note.id.unwrap_or_default(),
+        user: note.user,
+        subject: note.subject,
+        body: note.body,
+        created_at: note.created_at,
+        is_read: note.is_read,
+    }
 }
 
 pub(crate) async fn create_notification(
@@ -77,7 +78,10 @@ pub(crate) async fn create_notification(
     {
         Ok(note) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "notification": note})),
+            Json(NotificationCreateResponse {
+                status: "ok".to_string(),
+                notification: to_notification(note),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -112,7 +116,11 @@ pub(crate) async fn mark_notification_read(
     {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "id": payload.id, "user": claims.sub})),
+            Json(MarkNotificationResponse {
+                status: "ok".to_string(),
+                id: payload.id,
+                user: claims.sub.clone(),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -135,7 +143,10 @@ pub(crate) async fn list_notifications(
     match state.surreal.list_notifications(&target).await {
         Ok(items) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "notifications": items})),
+            Json(NotificationListResponse {
+                status: "ok".to_string(),
+                notifications: items.into_iter().map(to_notification).collect(),
+            }),
         )
             .into_response(),
         Err(err) => {

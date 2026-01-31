@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tracing::error;
@@ -14,6 +14,13 @@ use btc_forum_rust::{
     services::{BanAffects, BanCondition, BanRule, ForumService, SendPersonalMessage},
     surreal::SurrealUser,
 };
+use btc_forum_shared::{
+    AdminAccount, AdminAccountsResponse, AdminGroup, AdminGroupsResponse, AdminNotifyPayload,
+    ActionLogEntry, ActionLogsResponse, AdminNotifyResponse, AdminUser, AdminUsersResponse,
+    BanApplyResponse, BanListResponse, BanMemberView, BanPayload, BanRevokeResponse, BanRuleView,
+    BoardAccessPayload, BoardAccessResponse, BoardPermissionEntry, BoardPermissionPayload,
+    BoardPermissionResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
+};
 
 use super::{
     auth::{ensure_user_ctx, require_auth},
@@ -22,37 +29,6 @@ use super::{
     state::{run_forum_blocking, AppState},
     utils::sanitize_input,
 };
-
-#[derive(Serialize)]
-pub(crate) struct AdminAccount {
-    pub(crate) id: i64,
-    pub(crate) name: String,
-    pub(crate) role: Option<String>,
-    pub(crate) permissions: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct AdminGroupView {
-    pub(crate) id: i64,
-    pub(crate) name: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct AdminNotifyPayload {
-    pub(crate) user_ids: Vec<i64>,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct BanPayload {
-    #[serde(default)]
-    pub(crate) member_id: Option<i64>,
-    #[serde(default)]
-    pub(crate) ban_id: Option<i64>,
-    pub(crate) reason: Option<String>,
-    pub(crate) hours: Option<i64>,
-}
 
 #[derive(Deserialize)]
 pub(crate) struct AdminUsersQuery {
@@ -64,28 +40,6 @@ pub(crate) struct AdminUsersQuery {
 pub(crate) struct AdminPageQuery {
     pub(crate) _limit: Option<usize>,
     pub(crate) _offset: Option<usize>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct BoardAccessPayload {
-    pub(crate) board_id: String,
-    pub(crate) allowed_groups: Vec<i64>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct BoardPermissionPayload {
-    pub(crate) board_id: String,
-    pub(crate) group_id: i64,
-    pub(crate) allow: Vec<String>,
-    pub(crate) deny: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct BoardPermissionEntry {
-    pub(crate) board_id: String,
-    pub(crate) group_id: i64,
-    pub(crate) allow: Vec<String>,
-    pub(crate) deny: Vec<String>,
 }
 
 pub(crate) async fn list_users(
@@ -106,7 +60,7 @@ pub(crate) async fn list_users(
     }
     match run_forum_blocking(&state, move |forum| forum.list_members()).await {
         Ok(members) => {
-            let filtered: Vec<_> = members
+            let filtered: Vec<AdminUser> = members
                 .into_iter()
                 .filter(|m| {
                     if let Some(ref q) = params.q {
@@ -116,10 +70,20 @@ pub(crate) async fn list_users(
                     }
                 })
                 .take(params.limit.unwrap_or(200))
+                .map(|m| AdminUser {
+                    id: m.id,
+                    name: m.name,
+                    primary_group: m.primary_group,
+                    additional_groups: m.additional_groups,
+                    warning: m.warning,
+                })
                 .collect();
             (
                 StatusCode::OK,
-                Json(json!({ "status": "ok", "members": filtered })),
+                Json(AdminUsersResponse {
+                    status: "ok".to_string(),
+                    members: filtered,
+                }),
             )
                 .into_response()
         }
@@ -189,7 +153,10 @@ pub(crate) async fn list_admins(
 
     (
         StatusCode::OK,
-        Json(json!({ "status": "ok", "admins": output })),
+        Json(AdminAccountsResponse {
+            status: "ok".to_string(),
+            admins: output,
+        }),
     )
         .into_response()
 }
@@ -211,16 +178,19 @@ pub(crate) async fn list_groups(
     }
     match run_forum_blocking(&state, move |forum| forum.list_membergroups()).await {
         Ok(groups) => {
-            let output: Vec<AdminGroupView> = groups
+            let output: Vec<AdminGroup> = groups
                 .into_iter()
-                .map(|g| AdminGroupView {
+                .map(|g| AdminGroup {
                     id: g.id,
                     name: g.name,
                 })
                 .collect();
             (
                 StatusCode::OK,
-                Json(json!({ "status": "ok", "groups": output })),
+                Json(AdminGroupsResponse {
+                    status: "ok".to_string(),
+                    groups: output,
+                }),
             )
                 .into_response()
         }
@@ -281,7 +251,10 @@ pub(crate) async fn admin_notify(
     match run_forum_blocking(&state, move |forum| forum.send_personal_message(message)).await {
         Ok(result) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "sent_to": result.recipient_ids })),
+            Json(AdminNotifyResponse {
+                status: "ok".to_string(),
+                sent_to: result.recipient_ids,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -329,14 +302,14 @@ pub(crate) async fn list_bans(
                 .into_iter()
                 .map(|m| (m.id, m.name))
                 .collect();
-            let mut view = Vec::new();
+            let mut view: Vec<BanRuleView> = Vec::new();
             for ban in bans {
-                let mut member_ids = Vec::new();
+                let mut member_ids: Vec<i64> = Vec::new();
                 let mut emails = Vec::new();
                 let mut ips = Vec::new();
                 for cond in &ban.conditions {
                     match &cond.affects {
-                        BanAffects::Account { member_id } => member_ids.push(member_id),
+                        BanAffects::Account { member_id } => member_ids.push(*member_id),
                         BanAffects::Email { value } => emails.push(value.clone()),
                         BanAffects::Ip { value } => ips.push(value.clone()),
                     }
@@ -349,23 +322,28 @@ pub(crate) async fn list_bans(
                 ips.dedup();
                 let members = member_ids
                     .iter()
-                    .map(|id| {
-                        json!({
-                            "member_id": id,
-                            "name": member_map.get(id).cloned().unwrap_or_default(),
-                        })
+                    .map(|id| BanMemberView {
+                        member_id: *id,
+                        name: member_map.get(id).cloned().unwrap_or_default(),
                     })
                     .collect::<Vec<_>>();
-                view.push(json!({
-                    "id": ban.id,
-                    "reason": ban.reason,
-                    "expires_at": ban.expires_at.map(|dt| dt.to_rfc3339()),
-                    "members": members,
-                    "emails": emails,
-                    "ips": ips,
-                }));
+                view.push(BanRuleView {
+                    id: ban.id,
+                    reason: ban.reason,
+                    expires_at: ban.expires_at.map(|dt| dt.to_rfc3339()),
+                    members,
+                    emails,
+                    ips,
+                });
             }
-            (StatusCode::OK, Json(json!({"status": "ok", "bans": view}))).into_response()
+            (
+                StatusCode::OK,
+                Json(BanListResponse {
+                    status: "ok".to_string(),
+                    bans: view,
+                }),
+            )
+                .into_response()
         }
         Err(err) => {
             error!(error = %err, "failed to list bans");
@@ -419,7 +397,11 @@ pub(crate) async fn apply_ban(
     match run_forum_blocking(&state, move |forum| forum.save_ban_rule(rule)).await {
         Ok(id) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "ban_id": id, "member_id": member_id})),
+            Json(BanApplyResponse {
+                status: "ok".to_string(),
+                ban_id: id,
+                member_id,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -458,7 +440,10 @@ pub(crate) async fn revoke_ban(
     match run_forum_blocking(&state, move |forum| forum.delete_ban_rule(ban_id)).await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "ban_id": ban_id})),
+            Json(BanRevokeResponse {
+                status: "ok".to_string(),
+                ban_id,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -486,7 +471,23 @@ pub(crate) async fn list_action_logs(
         return resp.into_response();
     }
     match run_forum_blocking(&state, move |forum| forum.list_action_logs()).await {
-        Ok(logs) => (StatusCode::OK, Json(json!({"status": "ok", "logs": logs}))).into_response(),
+        Ok(logs) => (
+            StatusCode::OK,
+            Json(ActionLogsResponse {
+                status: "ok".to_string(),
+                logs: logs
+                    .into_iter()
+                    .map(|log| ActionLogEntry {
+                        id: log.id,
+                        action: log.action,
+                        member_id: log.member_id,
+                        details: log.details,
+                        timestamp: log.timestamp.to_rfc3339(),
+                    })
+                    .collect(),
+            }),
+        )
+            .into_response(),
         Err(err) => {
             error!(error = %err, "failed to list action logs");
             api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
@@ -513,7 +514,17 @@ pub(crate) async fn get_board_access(
     match load_board_access(&state).await {
         Ok(entries) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "entries": entries})),
+            Json(BoardAccessResponse {
+                status: "ok".to_string(),
+                entries: entries
+                    .into_iter()
+                    .map(|entry| btc_forum_shared::BoardAccessEntry {
+                        id: entry.id,
+                        name: entry.name,
+                        allowed_groups: entry.allowed_groups,
+                    })
+                    .collect(),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -553,7 +564,11 @@ pub(crate) async fn update_board_access(
     match run_forum_blocking(&state, move |forum| forum.set_board_access(&board_id, &allowed_groups)).await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "board_id": payload.board_id, "allowed_groups": payload.allowed_groups})),
+            Json(UpdateBoardAccessResponse {
+                status: "ok".to_string(),
+                board_id: payload.board_id,
+                allowed_groups: payload.allowed_groups,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -600,7 +615,10 @@ pub(crate) async fn get_board_permissions(
     let entries: Vec<BoardPermissionEntry> = response.take(0).unwrap_or_default();
     (
         StatusCode::OK,
-        Json(json!({"status": "ok", "entries": entries})),
+        Json(BoardPermissionResponse {
+            status: "ok".to_string(),
+            entries,
+        }),
     )
         .into_response()
 }
@@ -651,13 +669,13 @@ pub(crate) async fn update_board_permissions(
     match result {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "board_id": payload.board_id,
-                "group_id": payload.group_id,
-                "allow": payload.allow,
-                "deny": payload.deny
-            })),
+            Json(UpdateBoardPermissionResponse {
+                status: "ok".to_string(),
+                board_id: payload.board_id,
+                group_id: payload.group_id,
+                allow: payload.allow,
+                deny: payload.deny,
+            }),
         )
             .into_response(),
         Err(err) => {

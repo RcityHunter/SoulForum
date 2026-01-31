@@ -5,7 +5,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use serde_json::json;
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
 
@@ -14,7 +13,11 @@ use btc_forum_rust::{
     services::{BoardAccessEntry, ForumContext},
     surreal::{SurrealPost, SurrealTopic},
 };
-use btc_forum_shared::{Board, BoardsResponse, CreateBoardPayload, ErrorCode};
+use btc_forum_shared::{
+    Board, BoardsResponse, CreateBoardPayload, CreateBoardResponse, CreatePostPayload,
+    CreateTopicPayload, ErrorCode, PostResponse, PostsResponse, TopicCreateResponse,
+    TopicsResponse,
+};
 
 use super::{
     auth::{ensure_user_ctx, require_auth, user_groups},
@@ -27,6 +30,39 @@ use super::{
     utils::sanitize_input,
 };
 
+fn to_board(board: btc_forum_rust::surreal::SurrealBoard) -> Board {
+    Board {
+        id: board.id,
+        name: board.name,
+        description: board.description,
+        created_at: board.created_at,
+        updated_at: None,
+    }
+}
+
+fn to_topic(topic: SurrealTopic) -> btc_forum_shared::Topic {
+    btc_forum_shared::Topic {
+        id: topic.id,
+        board_id: Some(topic.board_id),
+        subject: topic.subject,
+        author: topic.author,
+        created_at: topic.created_at,
+        updated_at: topic.updated_at,
+    }
+}
+
+fn to_post(post: SurrealPost) -> btc_forum_shared::Post {
+    btc_forum_shared::Post {
+        id: post.id,
+        topic_id: post.topic_id,
+        board_id: post.board_id,
+        subject: post.subject,
+        body: post.body,
+        author: post.author,
+        created_at: post.created_at,
+    }
+}
+
 pub(crate) async fn surreal_posts(
     State(state): State<AppState>,
     _claims: Option<AuthClaims>,
@@ -34,10 +70,10 @@ pub(crate) async fn surreal_posts(
     match state.surreal.list_posts().await {
         Ok(posts) => (
             StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "posts": posts
-            })),
+            Json(PostsResponse {
+                status: "ok".to_string(),
+                posts: posts.into_iter().map(to_post).collect(),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -88,7 +124,10 @@ pub(crate) async fn create_surreal_board(
     {
         Ok(board) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "board": board})),
+            Json(CreateBoardResponse {
+                status: "ok".to_string(),
+                board: to_board(board),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -173,13 +212,6 @@ pub(crate) async fn surreal_boards(
     }
 }
 
-#[derive(Deserialize)]
-pub(crate) struct CreateTopicPayload {
-    pub(crate) board_id: String,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-}
-
 pub(crate) async fn create_surreal_topic(
     State(state): State<AppState>,
     claims: Option<AuthClaims>,
@@ -241,7 +273,11 @@ pub(crate) async fn create_surreal_topic(
     match topic_result {
         Ok((topic, post)) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "topic": topic, "first_post": post})),
+            Json(TopicCreateResponse {
+                status: "ok".to_string(),
+                topic: to_topic(topic),
+                first_post: to_post(post),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -278,7 +314,10 @@ pub(crate) async fn list_surreal_topics(
     match state.surreal.list_topics(&params.board_id).await {
         Ok(topics) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "topics": topics})),
+            Json(TopicsResponse {
+                status: "ok".to_string(),
+                topics: topics.into_iter().map(to_topic).collect(),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -291,14 +330,6 @@ pub(crate) async fn list_surreal_topics(
                 .into_response()
         }
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct CreatePostPayload {
-    pub(crate) topic_id: String,
-    pub(crate) board_id: String,
-    pub(crate) subject: Option<String>,
-    pub(crate) body: String,
 }
 
 pub(crate) async fn create_surreal_topic_post(
@@ -352,7 +383,10 @@ pub(crate) async fn create_surreal_topic_post(
     {
         Ok(post) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "post": post})),
+            Json(PostResponse {
+                status: "ok".to_string(),
+                post: to_post(post),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -391,7 +425,10 @@ pub(crate) async fn list_surreal_posts_for_topic(
     match state.surreal.list_posts_for_topic(&params.topic_id).await {
         Ok(posts) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "posts": posts})),
+            Json(PostsResponse {
+                status: "ok".to_string(),
+                posts: posts.into_iter().map(to_post).collect(),
+            }),
         )
             .into_response(),
         Err(err) => {

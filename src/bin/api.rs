@@ -18,7 +18,6 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use btc_forum_rust::{
-    auth::AuthClaims,
     rainbow_auth::RainbowAuthClient,
     services::surreal::SurrealService,
     surreal::{SurrealForumService, connect_from_env},
@@ -117,6 +116,7 @@ mod tests {
         middleware::from_fn,
         routing::post,
     };
+    use btc_forum_rust::auth::AuthClaims;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::time::Duration;
     use tower::ServiceExt;

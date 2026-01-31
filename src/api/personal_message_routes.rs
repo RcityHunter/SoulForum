@@ -5,12 +5,15 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
-use serde_json::json;
 use tracing::error;
 
 use btc_forum_rust::{
     auth::AuthClaims,
     services::{ForumError, ForumService, PersonalMessageFolder, SendPersonalMessage},
+};
+use btc_forum_shared::{
+    PersonalMessageIdsPayload, PersonalMessageIdsResponse, PersonalMessageListResponse,
+    PersonalMessageSendPayload, PersonalMessageSendResponse,
 };
 
 use super::{
@@ -21,24 +24,34 @@ use super::{
     utils::sanitize_input,
 };
 
+fn to_personal_message(
+    msg: btc_forum_rust::services::PersonalMessageSummary,
+) -> btc_forum_shared::PersonalMessage {
+    btc_forum_shared::PersonalMessage {
+        id: msg.id,
+        subject: msg.subject,
+        body: msg.body_preview,
+        sender_id: msg.sender_id,
+        sender_name: msg.sender_name,
+        sent_at: msg.sent_at.to_rfc3339(),
+        is_read: msg.is_read,
+        recipients: msg
+            .recipients
+            .into_iter()
+            .map(|peer| btc_forum_shared::PersonalMessagePeer {
+                member_id: peer.member_id,
+                name: peer.name,
+            })
+            .collect(),
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct PersonalMessageListQuery {
     pub(crate) folder: Option<String>,
     pub(crate) label: Option<i64>,
     pub(crate) offset: Option<usize>,
     pub(crate) limit: Option<usize>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct PersonalMessageSendPayload {
-    pub(crate) to: Vec<String>,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct PersonalMessageIdsPayload {
-    pub(crate) ids: Vec<i64>,
 }
 
 pub(crate) async fn list_personal_messages(
@@ -66,7 +79,12 @@ pub(crate) async fn list_personal_messages(
     }).await {
         Ok(page) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "messages": page.messages, "folder": folder, "total": page.total, "unread": page.unread})),
+            Json(PersonalMessageListResponse {
+                status: "ok".to_string(),
+                messages: page.messages.into_iter().map(to_personal_message).collect(),
+                total: page.total,
+                unread: page.unread,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -137,7 +155,10 @@ pub(crate) async fn send_personal_message_api(
     match run_forum_blocking(&state, move |forum| forum.send_personal_message(message)).await {
         Ok(result) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "sent_to": result.recipient_ids})),
+            Json(PersonalMessageSendResponse {
+                status: "ok".to_string(),
+                sent_to: result.recipient_ids,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -173,7 +194,10 @@ pub(crate) async fn mark_personal_messages_read(
     match run_forum_blocking(&state, move |forum| forum.mark_personal_messages(ctx.user_info.id, &ids, true)).await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "ids": payload.ids})),
+            Json(PersonalMessageIdsResponse {
+                status: "ok".to_string(),
+                ids: payload.ids,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -212,7 +236,10 @@ pub(crate) async fn delete_personal_messages_api(
     .await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "ids": payload.ids})),
+            Json(PersonalMessageIdsResponse {
+                status: "ok".to_string(),
+                ids: payload.ids,
+            }),
         )
             .into_response(),
         Err(err) => {

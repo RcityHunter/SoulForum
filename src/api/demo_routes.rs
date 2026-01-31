@@ -4,12 +4,14 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse},
 };
-use serde::Deserialize;
-use serde_json::json;
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
 
 use btc_forum_rust::{auth::AuthClaims, services::ForumService};
+use btc_forum_shared::{
+    CreateSurrealPostPayload, DemoPostResponse, DemoSurrealResponse, HealthResponse,
+    HealthSurrealStatus, MetricsResponse, PostResponse,
+};
 
 use super::{
     auth::{ensure_user_ctx, require_auth},
@@ -19,29 +21,28 @@ use super::{
     utils::sanitize_input,
 };
 
-#[derive(Deserialize)]
-pub(crate) struct CreateSurrealPost {
-    pub(crate) board_id: String,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-}
-
 pub(crate) async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let surreal_status = match state.surreal.health().await {
-        Ok(_) => json!({"status": "ok"}),
+        Ok(_) => HealthSurrealStatus {
+            status: "ok".to_string(),
+            message: None,
+        },
         Err(err) => {
             error!(error = %err, "surreal connectivity check failed");
-            json!({"status": "error", "message": err.to_string()})
+            HealthSurrealStatus {
+                status: "error".to_string(),
+                message: Some(err.to_string()),
+            }
         }
     };
 
     (
         StatusCode::OK,
-        Json(json!({
-            "service": "ok (surreal-only)",
-            "surreal": surreal_status,
-            "timestamp": chrono::Utc::now()
-        })),
+        Json(HealthResponse {
+            service: "ok (surreal-only)".to_string(),
+            surreal: surreal_status,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }),
     )
 }
 
@@ -50,11 +51,11 @@ pub(crate) async fn metrics(State(state): State<AppState>) -> impl IntoResponse 
     let rates = state.rate_limiter.snapshot();
     (
         StatusCode::OK,
-        Json(json!({
-            "status": "ok",
-            "uptime_secs": uptime,
-            "rate_limiter_keys": rates,
-        })),
+        Json(MetricsResponse {
+            status: "ok".to_string(),
+            uptime_secs: uptime,
+            rate_limiter_keys: rates,
+        }),
     )
 }
 
@@ -133,10 +134,10 @@ pub(crate) async fn demo_surreal(
     {
         Ok(record) => (
             StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "record": record
-            })),
+            Json(DemoSurrealResponse {
+                status: "ok".to_string(),
+                record,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -150,12 +151,24 @@ pub(crate) async fn demo_surreal(
     }
 }
 
+fn to_post(post: btc_forum_rust::surreal::SurrealPost) -> btc_forum_shared::Post {
+    btc_forum_shared::Post {
+        id: post.id,
+        topic_id: post.topic_id,
+        board_id: post.board_id,
+        subject: post.subject,
+        body: post.body,
+        author: post.author,
+        created_at: post.created_at,
+    }
+}
+
 pub(crate) async fn surreal_post(
     State(state): State<AppState>,
     claims: Option<AuthClaims>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: axum::http::HeaderMap,
-    Json(payload): Json<CreateSurrealPost>,
+    Json(payload): Json<CreateSurrealPostPayload>,
 ) -> impl IntoResponse {
     let claims = match require_auth(&claims) {
         Ok(c) => c,
@@ -195,10 +208,10 @@ pub(crate) async fn surreal_post(
     {
         Ok(post) => (
             StatusCode::CREATED,
-            Json(json!({
-                "status": "ok",
-                "post": post
-            })),
+            Json(PostResponse {
+                status: "ok".to_string(),
+                post: to_post(post),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -248,12 +261,12 @@ pub(crate) async fn demo_post(
     match run_forum_blocking(&state, move |forum| forum.persist_post(&ctx, submission)).await {
         Ok(posted) => (
             StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "topic_id": posted.topic_id,
-                "post_id": posted.message_id,
-                "author": author
-            })),
+            Json(DemoPostResponse {
+                status: "ok".to_string(),
+                topic_id: posted.topic_id,
+                post_id: posted.message_id,
+                author,
+            }),
         )
             .into_response(),
         Err(err) => api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())

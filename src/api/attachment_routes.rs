@@ -4,13 +4,15 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::Deserialize;
-use serde_json::json;
 use std::{net::SocketAddr, time::Duration};
 use tokio::fs;
 use tracing::error;
 
 use btc_forum_rust::{auth::AuthClaims, services::ForumService};
+use btc_forum_shared::{
+    AttachmentCreateResponse, AttachmentDeletePayload, AttachmentDeleteResponse,
+    AttachmentListResponse, AttachmentUploadResponse, CreateAttachmentPayload,
+};
 
 use super::{
     auth::{ensure_user_ctx, require_auth},
@@ -20,13 +22,14 @@ use super::{
     utils::sanitize_filename,
 };
 
-#[derive(Deserialize)]
-pub(crate) struct CreateAttachmentPayload {
-    pub(crate) filename: String,
-    pub(crate) size_bytes: i64,
-    pub(crate) mime_type: Option<String>,
-    pub(crate) board_id: Option<String>,
-    pub(crate) topic_id: Option<String>,
+fn to_attachment_meta(att: btc_forum_rust::surreal::SurrealAttachment) -> btc_forum_shared::AttachmentMeta {
+    btc_forum_shared::AttachmentMeta {
+        id: att.id,
+        filename: att.filename,
+        size_bytes: att.size_bytes,
+        mime_type: att.mime_type,
+        created_at: att.created_at,
+    }
 }
 
 pub(crate) async fn list_attachments(
@@ -41,7 +44,11 @@ pub(crate) async fn list_attachments(
     match state.surreal.list_attachments_for_user(&claims.sub).await {
         Ok(items) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "attachments": items, "base_url": base_url})),
+            Json(AttachmentListResponse {
+                status: "ok".to_string(),
+                attachments: items.into_iter().map(to_attachment_meta).collect(),
+                base_url: Some(base_url),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -102,7 +109,12 @@ pub(crate) async fn create_attachment_meta(
     {
         Ok(att) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "attachment": att, "base_url": base_url})),
+            Json(AttachmentCreateResponse {
+                status: "ok".to_string(),
+                attachment: to_attachment_meta(att),
+                base_url: Some(base_url),
+                url: None,
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -243,7 +255,12 @@ pub(crate) async fn upload_attachment(
     {
         Ok(att) => (
             StatusCode::CREATED,
-            Json(json!({"status": "ok", "attachment": att, "url": public_url, "base_url": base_url})),
+            Json(AttachmentUploadResponse {
+                status: "ok".to_string(),
+                attachment: to_attachment_meta(att),
+                base_url: Some(base_url),
+                url: Some(public_url),
+            }),
         )
             .into_response(),
         Err(err) => {
@@ -254,16 +271,11 @@ pub(crate) async fn upload_attachment(
     }
 }
 
-#[derive(Deserialize)]
-pub(crate) struct DeleteAttachmentPayload {
-    pub(crate) id: String,
-}
-
 pub(crate) async fn delete_attachment_api(
     State(state): State<AppState>,
     claims: Option<AuthClaims>,
     headers: axum::http::HeaderMap,
-    Json(payload): Json<DeleteAttachmentPayload>,
+    Json(payload): Json<AttachmentDeletePayload>,
 ) -> impl IntoResponse {
     let claims = match require_auth(&claims) {
         Ok(c) => c,
@@ -304,7 +316,10 @@ pub(crate) async fn delete_attachment_api(
     match run_forum_blocking(&state, move |forum| forum.delete_attachment(id_num)).await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({"status": "ok", "id": payload.id})),
+            Json(AttachmentDeleteResponse {
+                status: "ok".to_string(),
+                id: payload.id,
+            }),
         )
             .into_response(),
         Err(err) => {

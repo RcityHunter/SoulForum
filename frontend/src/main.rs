@@ -1,13 +1,24 @@
 use dioxus::prelude::*;
 use reqwasm::http::{Request, RequestCredentials};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::rc::Rc;
 use web_sys::wasm_bindgen::JsCast;
 use web_sys::{FormData, HtmlDocument, HtmlInputElement, File};
 use btc_forum_shared::{
-    ApiError, AuthMeResponse, AuthResponse, AuthUser, Board, BoardsResponse, CreateBoardPayload,
-    LoginRequest, RegisterRequest, RegisterResponse,
+    AdminAccount, AdminAccountsResponse, AdminGroup, AdminGroupsResponse, AdminUser,
+    AdminUsersResponse, ApiError, AttachmentCreateResponse, AttachmentDeletePayload,
+    AttachmentDeleteResponse, AttachmentListResponse, AttachmentMeta, AttachmentUploadResponse,
+    AuthMeResponse, AuthResponse, AuthUser, BanApplyResponse, BanListResponse, BanPayload,
+    BanRevokeResponse, BanRuleView, Board, BoardAccessEntry, BoardAccessPayload,
+    BoardAccessResponse, BoardPermissionEntry, BoardPermissionPayload, BoardPermissionResponse,
+    BoardsResponse, CreateAttachmentPayload, CreateBoardPayload, CreateBoardResponse,
+    CreatePostPayload, CreateNotificationPayload, CreateTopicPayload, HealthResponse, LoginRequest,
+    MarkNotificationPayload, MarkNotificationResponse, Notification, NotificationCreateResponse,
+    NotificationListResponse, PersonalMessage, PersonalMessageIdsPayload, PersonalMessageIdsResponse, PersonalMessageListResponse,
+    PersonalMessageSendPayload, PersonalMessageSendResponse,
+    Post, PostResponse, PostsResponse, RegisterRequest, RegisterResponse, Topic,
+    TopicCreateResponse, TopicsResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
 };
 mod api {
     pub mod errors;
@@ -21,123 +32,6 @@ fn main() {
 const BUILD_TAG: &str = "ban-click-v2";
 
 // ---------- Types ----------
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct Topic {
-    id: Option<String>,
-    board_id: Option<String>,
-    subject: String,
-    author: String,
-    created_at: Option<String>,
-    updated_at: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct Post {
-    id: Option<String>,
-    topic_id: Option<String>,
-    board_id: Option<String>,
-    subject: String,
-    body: String,
-    author: String,
-    created_at: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct TopicsResponse { status: String, topics: Vec<Topic> }
-#[derive(Deserialize)]
-struct PostsResponse { status: String, posts: Vec<Post> }
-#[derive(Deserialize)]
-struct TopicCreateResponse { status: String, topic: Topic, first_post: Post }
-#[derive(Deserialize)]
-struct PostResponse { status: String, post: Post }
-
-#[derive(Clone, Debug, Deserialize)]
-struct AdminUser { id: i64, name: String, primary_group: Option<i64>, additional_groups: Vec<i64>, warning: i32 }
-#[derive(Deserialize)]
-struct AdminUsersResponse { status: String, members: Vec<AdminUser> }
-#[derive(Clone, Debug, Deserialize)]
-struct AdminAccount { id: i64, name: String, role: Option<String>, permissions: Vec<String> }
-#[derive(Deserialize)]
-struct AdminAccountsResponse { status: String, admins: Vec<AdminAccount> }
-#[derive(Clone, Debug, Deserialize)]
-struct AdminGroup { id: i64, name: String }
-#[derive(Deserialize)]
-struct AdminGroupsResponse { status: String, groups: Vec<AdminGroup> }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct BoardAccessEntry { id: String, name: String, allowed_groups: Vec<i64> }
-#[derive(Serialize)]
-struct BoardAccessPayload { board_id: String, allowed_groups: Vec<i64> }
-#[derive(Deserialize)]
-struct BoardAccessResponse { status: String, entries: Vec<BoardAccessEntry> }
-#[derive(Deserialize)]
-struct UpdateBoardAccessResponse { status: String, board_id: String, allowed_groups: Vec<i64> }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct BoardPermissionEntry { board_id: String, group_id: i64, allow: Vec<String>, deny: Vec<String> }
-#[derive(Serialize)]
-struct BoardPermissionPayload { board_id: String, group_id: i64, allow: Vec<String>, deny: Vec<String> }
-#[derive(Deserialize)]
-struct BoardPermissionResponse { status: String, entries: Vec<BoardPermissionEntry> }
-#[derive(Deserialize)]
-struct UpdateBoardPermissionResponse { status: String, board_id: String, group_id: i64, allow: Vec<String>, deny: Vec<String> }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct Notification { id: String, user: String, subject: String, body: String, created_at: Option<String>, is_read: Option<bool> }
-#[derive(Deserialize)]
-struct NotificationListResponse { status: String, notifications: Vec<Notification> }
-#[derive(Deserialize)]
-struct NotificationCreateResponse { status: String, notification: Notification }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct AttachmentMeta { id: Option<String>, filename: String, size_bytes: i64, mime_type: Option<String>, created_at: Option<String> }
-#[derive(Deserialize)]
-struct AttachmentListResponse { status: String, attachments: Vec<AttachmentMeta>, base_url: Option<String> }
-#[derive(Deserialize)]
-struct AttachmentCreateResponse { status: String, attachment: AttachmentMeta, base_url: Option<String>, url: Option<String> }
-#[derive(Deserialize)]
-struct AttachmentUploadResponse { status: String, attachment: AttachmentMeta, base_url: Option<String>, url: Option<String> }
-#[derive(Serialize)]
-struct AttachmentDeletePayload { id: String }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct PersonalMessagePeer { member_id: i64, name: String }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct PersonalMessage {
-    id: i64,
-    subject: String,
-    #[serde(rename = "body_preview")]
-    body: String,
-    sender_id: i64,
-    sender_name: String,
-    sent_at: String,
-    is_read: bool,
-    recipients: Vec<PersonalMessagePeer>,
-}
-#[derive(Deserialize)]
-struct PersonalMessageListResponse { status: String, messages: Vec<PersonalMessage>, total: usize, unread: usize }
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct BanMemberView { member_id: i64, name: String }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-struct BanRuleView {
-    id: i64,
-    expires_at: Option<String>,
-    reason: Option<String>,
-    #[serde(default)]
-    members: Vec<BanMemberView>,
-    #[serde(default)]
-    emails: Vec<String>,
-    #[serde(default)]
-    ips: Vec<String>,
-}
-#[derive(Deserialize)]
-struct BanListResponse { status: String, bans: Vec<BanRuleView> }
-
-#[derive(Serialize)]
-struct CreateTopicPayload { board_id: String, subject: String, body: String }
-#[derive(Serialize)]
-struct CreatePostPayload { topic_id: String, board_id: String, subject: Option<String>, body: String }
 
 // ---------- Utilities ----------
 fn window() -> Option<web_sys::Window> { web_sys::window() }
@@ -337,7 +231,7 @@ fn App() -> Element {
                 name: name.clone(),
                 description: if desc.trim().is_empty() { None } else { Some(desc.clone()) },
             };
-            match post_json::<serde_json::Value, _>(&base, "/surreal/boards", &jwt, &csrf, &payload).await {
+            match post_json::<CreateBoardResponse, _>(&base, "/surreal/boards", &jwt, &csrf, &payload).await {
                 Ok(_) => {
                     status.set(format!("版块已创建：{}", name));
                     if let Ok(resp) = get_json::<BoardsResponse>(&base, "/surreal/boards", &jwt, &csrf).await {
@@ -407,14 +301,10 @@ fn App() -> Element {
         let mut status = status.clone();
         spawn(async move {
             status.set("健康检查中...".into());
-            match get_json::<serde_json::Value>(&base, "/health", "", "").await {
+            match get_json::<HealthResponse>(&base, "/health", "", "").await {
                 Ok(resp) => {
-                    let service = resp.get("service").and_then(|v| v.as_str()).unwrap_or("unknown");
-                    let surreal = resp
-                        .get("surreal")
-                        .and_then(|v| v.get("status"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
+                    let service = resp.service;
+                    let surreal = resp.surreal.status;
                     status.set(format!("健康检查: {service} / surreal: {surreal}"));
                 }
                 Err(err) => status.set(format!("健康检查失败：{err}")),
@@ -507,7 +397,11 @@ fn App() -> Element {
         }
         spawn(async move {
             status.set("发送通知占位...".into());
-            let payload = serde_json::json!({ "subject": "Hello", "body": "这是一条占位通知", "user": null });
+            let payload = CreateNotificationPayload {
+                subject: "Hello".to_string(),
+                body: "这是一条占位通知".to_string(),
+                user: None,
+            };
             match post_json::<NotificationCreateResponse, _>(&base, "/surreal/notifications", &jwt, &csrf, &payload).await {
                 Ok(resp) => status.set(format!("已创建通知 {}", resp.notification.subject)),
                 Err(err) => status.set(format!("发送失败：{err}")),
@@ -552,7 +446,13 @@ fn App() -> Element {
         }
         spawn(async move {
             status.set("创建附件占位...".into());
-            let payload = serde_json::json!({ "filename": "demo.txt", "size_bytes": 1234, "mime_type": "text/plain", "board_id": null, "topic_id": null });
+            let payload = CreateAttachmentPayload {
+                filename: "demo.txt".to_string(),
+                size_bytes: 1234,
+                mime_type: Some("text/plain".to_string()),
+                board_id: None,
+                topic_id: None,
+            };
             match post_json::<AttachmentCreateResponse, _>(&base, "/surreal/attachments", &jwt, &csrf, &payload).await {
                 Ok(resp) => {
                     if let Some(url) = resp.base_url { base_url_sig.set(url); }
@@ -680,12 +580,12 @@ fn App() -> Element {
         let mut list = personal_messages.clone();
         if jwt.trim().is_empty() || ids.is_empty() { return; }
         spawn(async move {
-            let payload = serde_json::json!({ "ids": ids });
-            match post_json::<serde_json::Value, _>(&base, "/surreal/personal_messages/read", &jwt, &csrf, &payload).await {
+            let payload = PersonalMessageIdsPayload { ids: ids.clone() };
+            match post_json::<PersonalMessageIdsResponse, _>(&base, "/surreal/personal_messages/read", &jwt, &csrf, &payload).await {
                 Ok(_) => {
                     let mut current = list.read().clone();
                     for pm in current.iter_mut() {
-                        if payload["ids"].as_array().unwrap().iter().any(|v| v.as_i64() == Some(pm.id)) {
+                        if ids.iter().any(|id| *id == pm.id) {
                             pm.is_read = true;
                         }
                     }
@@ -705,8 +605,8 @@ fn App() -> Element {
         let mut list = personal_messages.clone();
         if jwt.trim().is_empty() || ids.is_empty() { return; }
         spawn(async move {
-            let payload = serde_json::json!({ "ids": ids.clone() });
-            match post_json::<serde_json::Value, _>(&base, "/surreal/personal_messages/delete", &jwt, &csrf, &payload).await {
+            let payload = PersonalMessageIdsPayload { ids: ids.clone() };
+            match post_json::<PersonalMessageIdsResponse, _>(&base, "/surreal/personal_messages/delete", &jwt, &csrf, &payload).await {
                 Ok(_) => {
                     let filtered: Vec<_> = list.read().iter().cloned().filter(|pm| !ids.contains(&pm.id)).collect();
                     list.set(filtered);
@@ -730,8 +630,8 @@ fn App() -> Element {
         let recipients: Vec<String> = to_raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
         spawn(async move {
             status.set("发送私信中...".into());
-            let payload = serde_json::json!({ "to": recipients, "subject": subj, "body": body });
-            match post_json::<serde_json::Value, _>(&base, "/surreal/personal_messages/send", &jwt, &csrf, &payload).await {
+            let payload = PersonalMessageSendPayload { to: recipients, subject: subj, body };
+            match post_json::<PersonalMessageSendResponse, _>(&base, "/surreal/personal_messages/send", &jwt, &csrf, &payload).await {
                 Ok(_) => status.set("私信已发送".into()),
                 Err(err) => status.set(format!("发送失败：{err}")),
             }
@@ -831,26 +731,31 @@ fn App() -> Element {
         });
     };
 
-    let apply_ban = move || {
-        let base = api_base.read().clone();
-        let jwt = token.read().clone();
-        let csrf = csrf_token.read().clone();
-        let mut status = status.clone();
-        let bans_sig = bans.clone();
-        let member_id = ban_member_id.read().trim().parse::<i64>().unwrap_or(0);
-        let hours = ban_hours.read().trim().parse::<i64>().unwrap_or(0);
-        let reason = ban_reason.read().clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
-        if member_id == 0 || hours <= 0 { status.set("请输入有效的 member_id 与时长".into()); return; }
-        spawn(async move {
-            status.set("封禁中...".into());
-            let payload = serde_json::json!({ "member_id": member_id, "hours": hours, "reason": reason });
-            match post_json::<serde_json::Value, _>(&base, "/admin/bans/apply", &jwt, &csrf, &payload).await {
-                Ok(_) => { status.set("已封禁".into()); load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await; }
-                Err(err) => status.set(format!("封禁失败：{err}")),
-            }
-        });
-    };
+        let apply_ban = move || {
+            let base = api_base.read().clone();
+            let jwt = token.read().clone();
+            let csrf = csrf_token.read().clone();
+            let mut status = status.clone();
+            let bans_sig = bans.clone();
+            let member_id = ban_member_id.read().trim().parse::<i64>().unwrap_or(0);
+            let hours = ban_hours.read().trim().parse::<i64>().unwrap_or(0);
+            let reason = ban_reason.read().clone();
+            if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+            if member_id == 0 || hours <= 0 { status.set("请输入有效的 member_id 与时长".into()); return; }
+            spawn(async move {
+                status.set("封禁中...".into());
+                let payload = BanPayload {
+                    member_id: Some(member_id),
+                    ban_id: None,
+                    reason: Some(reason),
+                    hours: Some(hours),
+                };
+                match post_json::<BanApplyResponse, _>(&base, "/admin/bans/apply", &jwt, &csrf, &payload).await {
+                    Ok(_) => { status.set("已封禁".into()); load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await; }
+                    Err(err) => status.set(format!("封禁失败：{err}")),
+                }
+            });
+        };
 
     let revoke_ban = Rc::new(move |ban_id: i64| {
         let base = api_base.read().clone();
@@ -861,8 +766,13 @@ fn App() -> Element {
         if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
         status.set("解除封禁中...".into());
         spawn(async move {
-            let payload = serde_json::json!({ "ban_id": ban_id });
-            match post_json::<serde_json::Value, _>(&base, "/admin/bans/revoke", &jwt, &csrf, &payload).await {
+            let payload = BanPayload {
+                member_id: None,
+                ban_id: Some(ban_id),
+                reason: None,
+                hours: None,
+            };
+            match post_json::<BanRevokeResponse, _>(&base, "/admin/bans/revoke", &jwt, &csrf, &payload).await {
                 Ok(_) => { status.set("已解除封禁".into()); load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await; }
                 Err(err) => status.set(format!("解除失败：{err}")),
             }
@@ -1328,8 +1238,8 @@ fn App() -> Element {
                                         let mut list = notifications.clone();
                                         let note_id = n.id.clone();
                                         spawn(async move {
-                                            let payload = serde_json::json!({ "id": note_id.clone() });
-                                            match post_json::<serde_json::Value, _>(&base, "/surreal/notifications/mark_read", &jwt, &csrf, &payload).await {
+                                            let payload = MarkNotificationPayload { id: note_id.clone() };
+                                            match post_json::<MarkNotificationResponse, _>(&base, "/surreal/notifications/mark_read", &jwt, &csrf, &payload).await {
                                                 Ok(_) => {
                                                     let mut current = list.read().clone();
                                                     if let Some(item) = current.iter_mut().find(|item| item.id == note_id) {
@@ -1362,7 +1272,7 @@ fn App() -> Element {
                                     let mut list = attachments.clone();
                                     spawn(async move {
                                         let payload = AttachmentDeletePayload { id: id.clone() };
-                                        match post_json::<serde_json::Value, _>(&base, "/surreal/attachments/delete", &jwt, &csrf, &payload).await {
+                                        match post_json::<AttachmentDeleteResponse, _>(&base, "/surreal/attachments/delete", &jwt, &csrf, &payload).await {
                                             Ok(_) => {
                                                 let filtered: Vec<_> = list.read().iter().cloned().filter(|item| item.id.as_ref() != Some(&payload.id)).collect();
                                                 list.set(filtered);
