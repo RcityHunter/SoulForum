@@ -40,14 +40,27 @@ fn load_token_from_storage() -> Option<String> { window().and_then(|win| win.loc
 fn save_user_to_storage(name: &str) { if let Some(win) = window() { if let Ok(Some(storage)) = win.local_storage() { let _ = storage.set_item("user_name", name); } } }
 fn load_user_from_storage() -> Option<String> { window().and_then(|win| win.local_storage().ok().flatten()).and_then(|s| s.get_item("user_name").ok().flatten()) }
 fn clear_auth_storage() { if let Some(win) = window() { if let Ok(Some(storage)) = win.local_storage() { let _ = storage.remove_item("jwt_token"); let _ = storage.remove_item("user_name"); } } }
-fn set_csrf_cookie(token: &str) { if token.trim().is_empty() { return; } if let Some(win) = window() { if let Some(doc) = win.document() { if let Ok(html) = doc.dyn_into::<HtmlDocument>() { let _ = html.set_cookie(&format!("XSRF-TOKEN={}; Path=/", token)); } } } }
+fn read_csrf_cookie() -> Option<String> {
+    let doc = window()?.document()?;
+    let html: HtmlDocument = doc.dyn_into().ok()?;
+    let cookie = html.cookie().ok()?;
+    cookie
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("XSRF-TOKEN="))
+        .map(|v| v.to_string())
+}
 
 async fn get_json<T: DeserializeOwned>(base: &str, path: &str, token: &str, csrf: &str) -> Result<T, String> {
     let url = format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'));
     let mut req = Request::get(&url);
     if !token.trim().is_empty() { req = req.header("Authorization", &format!("Bearer {}", token)); }
-    if !csrf.trim().is_empty() {
-        req = req.header("X-CSRF-TOKEN", csrf).header("Cookie", &format!("XSRF-TOKEN={}", csrf)).credentials(RequestCredentials::Include);
+    let csrf_value = if csrf.trim().is_empty() {
+        read_csrf_cookie().unwrap_or_default()
+    } else {
+        csrf.to_string()
+    };
+    if !csrf_value.trim().is_empty() {
+        req = req.header("X-CSRF-TOKEN", &csrf_value).credentials(RequestCredentials::Include);
     }
     let resp = req.send().await.map_err(|e| format!("网络错误: {e}"))?;
     let status = resp.status();
@@ -65,8 +78,13 @@ async fn post_json<T: DeserializeOwned, B: Serialize>(base: &str, path: &str, to
     let url = format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'));
     let mut req = Request::post(&url);
     if !token.trim().is_empty() { req = req.header("Authorization", &format!("Bearer {}", token)); }
-    if !csrf.trim().is_empty() {
-        req = req.header("X-CSRF-TOKEN", csrf).header("Cookie", &format!("XSRF-TOKEN={}", csrf)).credentials(RequestCredentials::Include);
+    let csrf_value = if csrf.trim().is_empty() {
+        read_csrf_cookie().unwrap_or_default()
+    } else {
+        csrf.to_string()
+    };
+    if !csrf_value.trim().is_empty() {
+        req = req.header("X-CSRF-TOKEN", &csrf_value).credentials(RequestCredentials::Include);
     }
     let resp = req.header("Content-Type", "application/json").body(serde_json::to_string(body).unwrap()).send().await.map_err(|e| format!("网络错误: {e}"))?;
     let status = resp.status();
@@ -88,7 +106,7 @@ fn App() -> Element {
     let mut current_user = use_signal(|| load_user_from_storage().unwrap_or_default());
     let mut status = use_signal(|| "等待操作...".to_string());
     let mut current_member_id = use_signal(|| None::<i64>);
-    let mut csrf_token = use_signal(|| "".to_string());
+    let mut csrf_token = use_signal(|| read_csrf_cookie().unwrap_or_default());
     let mut auth_checked = use_signal(|| false);
     let mut boards_checked = use_signal(|| false);
     let start_path = window()
@@ -168,9 +186,8 @@ fn App() -> Element {
                     save_user_to_storage(&resp.user.name);
                     current_user.set(resp.user.name.clone());
                     current_member_id.set(resp.user.member_id);
-                    let csrf = format!("csrf-{}", js_sys::Date::now() as i64);
-                    csrf_token.set(csrf.clone());
-                    set_csrf_cookie(&csrf);
+                    let csrf = read_csrf_cookie().unwrap_or_default();
+                    csrf_token.set(csrf);
                     status.set(format!("已登录：{}", resp.user.name));
                     is_login_page.set(false);
                     is_register_page.set(false);
@@ -260,9 +277,8 @@ fn App() -> Element {
                     save_user_to_storage(&resp.user.name);
                     current_user.set(resp.user.name);
                     current_member_id.set(resp.user.member_id);
-                    let csrf = format!("csrf-{}", js_sys::Date::now() as i64);
-                    csrf_token.set(csrf.clone());
-                    set_csrf_cookie(&csrf);
+                    let csrf = read_csrf_cookie().unwrap_or_default();
+                    csrf_token.set(csrf);
                     status.set("登录已验证".into());
                 }
                 Err(err) => {
@@ -1032,7 +1048,7 @@ fn App() -> Element {
                             textarea { value: "{token.read()}", rows: "3", oninput: move |evt| { token.set(evt.value()); save_token_to_storage(&evt.value()); } }
                             div { class: "actions",
                                 button { onclick: move |_| { token.set("".into()); save_token_to_storage(""); status.set("已清空本地 token".into()); }, "清空 Token" }
-                                button { onclick: move |_| { let csrf = format!("csrf-{}", js_sys::Date::now() as i64); csrf_token.set(csrf.clone()); set_csrf_cookie(&csrf); status.set("已刷新 CSRF".into()); }, "生成 CSRF" }
+                                button { onclick: move |_| { let csrf = read_csrf_cookie().unwrap_or_default(); csrf_token.set(csrf.clone()); status.set("已同步 CSRF".into()); }, "同步 CSRF" }
                             }
                         }
                     }
@@ -1364,7 +1380,7 @@ fn App() -> Element {
                             textarea { value: "{token.read()}", rows: "3", oninput: move |evt| { token.set(evt.value()); save_token_to_storage(&evt.value()); } }
                             div { class: "actions",
                                 button { onclick: move |_| { token.set("".into()); save_token_to_storage(""); status.set("已清空本地 token".into()); }, "清空 Token" }
-                                button { onclick: move |_| { let csrf = format!("csrf-{}", js_sys::Date::now() as i64); csrf_token.set(csrf.clone()); set_csrf_cookie(&csrf); status.set("已刷新 CSRF".into()); }, "生成 CSRF" }
+                                button { onclick: move |_| { let csrf = read_csrf_cookie().unwrap_or_default(); csrf_token.set(csrf.clone()); status.set("已同步 CSRF".into()); }, "同步 CSRF" }
                             }
                         }
                     }
