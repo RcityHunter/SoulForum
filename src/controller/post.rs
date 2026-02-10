@@ -1,8 +1,8 @@
-use crate::drafts::{DraftOptions, save_draft};
+use crate::drafts::{save_draft, DraftOptions};
 use crate::editor::{
-    RichEditOptions, VerificationOptions, create_control_richedit, create_control_verification,
+    create_control_richedit, create_control_verification, RichEditOptions, VerificationOptions,
 };
-use crate::post_ops::{MessageOptions, PosterOptions, TopicOptions, create_post, modify_post};
+use crate::post_ops::{create_post, modify_post, MessageOptions, PosterOptions, TopicOptions};
 use crate::services::{
     BoardListOptions, ForumContext, ForumError, ForumService, ServiceResult, SessionCheckMode,
     TopicPostingContext,

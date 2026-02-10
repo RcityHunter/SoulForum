@@ -1,18 +1,14 @@
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode, Json};
 
 use btc_forum_rust::{
-    auth::AuthClaims,
-    rainbow_auth::RainbowUser,
-    services::ForumContext,
-    surreal::SurrealUser,
+    auth::AuthClaims, rainbow_auth::RainbowUser, services::ForumContext, surreal::SurrealUser,
 };
 
-use super::{
-    error::api_error_from_status,
-    state::AppState,
-};
+use super::{error::api_error_from_status, state::AppState};
 
-pub(crate) fn require_auth(claims: &Option<AuthClaims>) -> Result<&AuthClaims, (StatusCode, Json<btc_forum_shared::ApiError>)> {
+pub(crate) fn require_auth(
+    claims: &Option<AuthClaims>,
+) -> Result<&AuthClaims, (StatusCode, Json<btc_forum_shared::ApiError>)> {
     if let Some(claims) = claims {
         Ok(claims)
     } else {
@@ -30,7 +26,11 @@ pub(crate) fn bearer_from_headers(headers: &axum::http::HeaderMap) -> Option<Str
         .strip_prefix("Bearer ")
         .or_else(|| value.strip_prefix("bearer "))?;
     let token = token.trim();
-    if token.is_empty() { None } else { Some(token.to_string()) }
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
 }
 
 pub(crate) async fn resolve_rainbow_user(
@@ -58,11 +58,7 @@ pub(crate) async fn ensure_user_ctx(
         .unwrap_or(&claims.sub);
     match state
         .surreal
-        .ensure_user(
-            name,
-            claims.role.as_deref(),
-            claims.permissions.as_deref(),
-        )
+        .ensure_user(name, claims.role.as_deref(), claims.permissions.as_deref())
         .await
     {
         Ok(user) => {

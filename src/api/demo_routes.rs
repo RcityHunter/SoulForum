@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, State},
     http::StatusCode,
     response::{Html, IntoResponse},
+    Json,
 };
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
@@ -16,7 +16,10 @@ use btc_forum_shared::{
 use super::{
     auth::{ensure_user_ctx, require_auth},
     error::api_error_from_status,
-    guards::{ensure_board_access, ensure_permission, ensure_permission_for_board, enforce_rate, validate_content, verify_csrf},
+    guards::{
+        enforce_rate, ensure_board_access, ensure_permission, ensure_permission_for_board,
+        validate_content, verify_csrf,
+    },
     state::{run_forum_blocking, AppState},
     utils::sanitize_input,
 };
@@ -142,10 +145,7 @@ pub(crate) async fn demo_surreal(
             .into_response(),
         Err(err) => {
             error!(error = %err, "surreal demo failed");
-            api_error_from_status(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                err.to_string(),
-            )
+            api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
                 .into_response()
         }
     }
@@ -216,10 +216,7 @@ pub(crate) async fn surreal_post(
             .into_response(),
         Err(err) => {
             error!(error = %err, "failed to create surreal post");
-            api_error_from_status(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                err.to_string(),
-            )
+            api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
                 .into_response()
         }
     }

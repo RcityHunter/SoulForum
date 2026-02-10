@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use std::{net::SocketAddr, time::Duration};
 use tokio::fs;
@@ -18,11 +18,15 @@ use super::{
     auth::{ensure_user_ctx, require_auth},
     error::api_error_from_status,
     guards::{enforce_rate, verify_csrf},
-    state::{allowed_mime, max_upload_bytes, run_forum_blocking, upload_base_url, upload_dir, AppState},
+    state::{
+        allowed_mime, max_upload_bytes, run_forum_blocking, upload_base_url, upload_dir, AppState,
+    },
     utils::sanitize_filename,
 };
 
-fn to_attachment_meta(att: btc_forum_rust::surreal::SurrealAttachment) -> btc_forum_shared::AttachmentMeta {
+fn to_attachment_meta(
+    att: btc_forum_rust::surreal::SurrealAttachment,
+) -> btc_forum_shared::AttachmentMeta {
     btc_forum_shared::AttachmentMeta {
         id: att.id,
         filename: att.filename,
@@ -160,8 +164,11 @@ pub(crate) async fn upload_attachment(
                     Ok(bytes) => file_bytes = Some(bytes),
                     Err(err) => {
                         error!(error = %err, "failed to read upload");
-                        return api_error_from_status(StatusCode::BAD_REQUEST, "failed to read upload")
-                            .into_response();
+                        return api_error_from_status(
+                            StatusCode::BAD_REQUEST,
+                            "failed to read upload",
+                        )
+                        .into_response();
                     }
                 }
             }
@@ -203,13 +210,21 @@ pub(crate) async fn upload_attachment(
     let dir = upload_dir();
     if let Err(err) = fs::create_dir_all(&dir).await {
         error!(error = %err, "failed to create upload dir");
-        return api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, "server cannot create upload dir")
-            .into_response();
+        return api_error_from_status(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server cannot create upload dir",
+        )
+        .into_response();
     }
 
     let mut path = dir.join(&safe_name);
     let (stem, ext) = match path.file_stem().and_then(|s| s.to_str()) {
-        Some(stem) => (stem.to_string(), path.extension().and_then(|e| e.to_str()).map(|e| e.to_string())),
+        Some(stem) => (
+            stem.to_string(),
+            path.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_string()),
+        ),
         None => (safe_name.clone(), None),
     };
     let mut counter = 1;
@@ -235,11 +250,7 @@ pub(crate) async fn upload_attachment(
     }
 
     let base_url = upload_base_url();
-    let public_url = format!(
-        "{}/{}",
-        base_url.trim_end_matches('/'),
-        &final_name
-    );
+    let public_url = format!("{}/{}", base_url.trim_end_matches('/'), &final_name);
 
     match state
         .surreal
@@ -295,8 +306,7 @@ pub(crate) async fn delete_attachment_api(
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
     if id_num <= 0 {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "invalid id")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "invalid id").into_response();
     }
     if !ctx.user_info.is_admin {
         match state.surreal.list_attachments_for_user(&claims.sub).await {
@@ -308,8 +318,11 @@ pub(crate) async fn delete_attachment_api(
             }
             Err(err) => {
                 error!(error = %err, "failed to load attachments for delete");
-                return api_error_from_status(StatusCode::INTERNAL_SERVER_ERROR, "cannot verify ownership")
-                    .into_response();
+                return api_error_from_status(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot verify ownership",
+                )
+                .into_response();
             }
         }
     }

@@ -1,6 +1,9 @@
 /target
+/target-*/
+/target*
 target-codex/
 target-local/
+target-ci/
 frontend/target
 AGENTS.md
 .env

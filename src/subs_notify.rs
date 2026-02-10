@@ -1,5 +1,5 @@
 use crate::services::{ForumError, ForumService, ServiceResult};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::collections::HashMap;

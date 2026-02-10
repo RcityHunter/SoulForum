@@ -1,6 +1,6 @@
 use crate::services::{
-    ActionLogEntry, AttachmentRecord, AttachmentUpload, BanLogEntry, BanRule, BoardAccessEntry,
-    AttachmentInfo, BoardListOptions, BoardSummary, CalendarEvent, DraftStorage, ForumContext,
+    ActionLogEntry, AttachmentInfo, AttachmentRecord, AttachmentUpload, BanLogEntry, BanRule,
+    BoardAccessEntry, BoardListOptions, BoardSummary, CalendarEvent, DraftStorage, ForumContext,
     ForumError, ForumService, GroupAssignType, GroupMember, MemberRecord, MembergroupData,
     MembergroupListEntry, MembergroupListType, MembergroupSettings, MembergroupSummary,
     MessageData, MessageEditData, NotifyPrefs, PermissionChange, PermissionGroupContext,
@@ -11,15 +11,14 @@ use crate::services::{
     SessionCheckMode, TopicPostingContext,
 };
 use crate::surreal::{
-    SurrealClient, create_board as surreal_create_board,
-    create_post_in_topic as surreal_create_post_in_topic, create_topic as surreal_create_topic,
-    get_user_by_name, list_boards as surreal_list_boards,
-    list_posts_for_topic as surreal_list_posts_for_topic,
+    create_board as surreal_create_board, create_post_in_topic as surreal_create_post_in_topic,
+    create_topic as surreal_create_topic, get_user_by_name, list_boards as surreal_list_boards,
+    list_posts_for_topic as surreal_list_posts_for_topic, SurrealClient,
 };
 use chrono::{TimeZone, Utc};
 use serde::Deserialize;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use serde_json::Value;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct PostRow {
@@ -34,10 +33,7 @@ struct PostRow {
 
 impl PostRow {
     fn topic_id_numeric(&self) -> Option<i64> {
-        self.topic_id
-            .split(':')
-            .last()
-            .and_then(|s| s.parse().ok())
+        self.topic_id.split(':').last().and_then(|s| s.parse().ok())
     }
 }
 
@@ -73,7 +69,10 @@ impl SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        let row: Option<PostRow> = response.take(0).ok().and_then(|mut v: Vec<PostRow>| v.pop());
+        let row: Option<PostRow> = response
+            .take(0)
+            .ok()
+            .and_then(|mut v: Vec<PostRow>| v.pop());
         Ok(row)
     }
 
@@ -224,7 +223,10 @@ impl ForumService for SurrealService {
             board_id: Option<String>,
             subject: Option<String>,
         }
-        let topic: Option<TopicRow> = response.take(0).ok().and_then(|mut v: Vec<TopicRow>| v.pop());
+        let topic: Option<TopicRow> = response
+            .take(0)
+            .ok()
+            .and_then(|mut v: Vec<TopicRow>| v.pop());
         let Some(topic) = topic else {
             return Ok(None);
         };
@@ -267,8 +269,14 @@ impl ForumService for SurrealService {
             id: Option<String>,
             created_at: Option<String>,
         }
-        let last: Option<MsgRow> = last_resp.take(0).ok().and_then(|mut v: Vec<MsgRow>| v.pop());
-        let first: Option<MsgRow> = first_resp.take(0).ok().and_then(|mut v: Vec<MsgRow>| v.pop());
+        let last: Option<MsgRow> = last_resp
+            .take(0)
+            .ok()
+            .and_then(|mut v: Vec<MsgRow>| v.pop());
+        let first: Option<MsgRow> = first_resp
+            .take(0)
+            .ok()
+            .and_then(|mut v: Vec<MsgRow>| v.pop());
 
         let parse_dt = |s: Option<String>| {
             s.and_then(|v| chrono::DateTime::parse_from_rfc3339(&v).ok())

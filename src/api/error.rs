@@ -1,9 +1,13 @@
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode, Json};
 use btc_forum_shared::{ApiError, ErrorCode};
 
 use btc_forum_rust::rainbow_auth::RainbowAuthError;
 
-pub(crate) fn api_error(status: StatusCode, code: ErrorCode, message: impl Into<String>) -> (StatusCode, Json<ApiError>) {
+pub(crate) fn api_error(
+    status: StatusCode,
+    code: ErrorCode,
+    message: impl Into<String>,
+) -> (StatusCode, Json<ApiError>) {
     (
         status,
         Json(ApiError {
@@ -14,7 +18,10 @@ pub(crate) fn api_error(status: StatusCode, code: ErrorCode, message: impl Into<
     )
 }
 
-pub(crate) fn api_error_from_status(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<ApiError>) {
+pub(crate) fn api_error_from_status(
+    status: StatusCode,
+    message: impl Into<String>,
+) -> (StatusCode, Json<ApiError>) {
     let code = match status {
         StatusCode::UNAUTHORIZED => ErrorCode::Unauthorized,
         StatusCode::FORBIDDEN => ErrorCode::Forbidden,

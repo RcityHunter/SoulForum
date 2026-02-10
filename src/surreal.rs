@@ -5,9 +5,9 @@ use std::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use surrealdb::{
-    Surreal,
     engine::remote::http::{Client, Http},
     opt::auth::Root,
+    Surreal,
 };
 use tracing::info;
 
@@ -513,7 +513,11 @@ impl SurrealUser {
         let mut hasher = DefaultHasher::new();
         self.name.hash(&mut hasher);
         let hashed = (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64;
-        if hashed == 0 { 1 } else { hashed }
+        if hashed == 0 {
+            1
+        } else {
+            hashed
+        }
     }
 }
 
@@ -633,7 +637,6 @@ pub async fn ensure_user(
         }
         return Ok(user);
     }
-    let mut seed_permissions: Vec<String> = Vec::new();
     let mut seed_role = role;
     let mut seed_permissions_ref = permissions;
 
@@ -649,12 +652,13 @@ pub async fn ensure_user(
         let is_first_user = rows.first().map(|row| row.count == 0).unwrap_or(true);
         if is_first_user {
             seed_role = Some("admin");
-            seed_permissions = vec![
+            let seed_permissions = vec![
                 "manage_boards".to_string(),
                 "post_new".to_string(),
                 "post_reply_any".to_string(),
             ];
             seed_permissions_ref = Some(seed_permissions.as_slice());
+            return create_user(client, name, seed_role, seed_permissions_ref, None).await;
         }
     }
 

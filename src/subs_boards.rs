@@ -57,13 +57,11 @@ mod tests {
         controller.list_for_group(&mut ctx, 1).unwrap();
         controller.save_for_group(1, &["1".into()]).unwrap();
         let boards = service.list_board_access().unwrap();
-        assert!(
-            boards
-                .iter()
-                .find(|board| board.id == "1")
-                .unwrap()
-                .allowed_groups
-                .contains(&1)
-        );
+        assert!(boards
+            .iter()
+            .find(|board| board.id == "1")
+            .unwrap()
+            .allowed_groups
+            .contains(&1));
     }
 }

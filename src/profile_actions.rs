@@ -1,6 +1,6 @@
 use crate::profile_modify::ProfileController;
 use crate::services::{
-    ForumContext, ForumError, ForumService, PmPreferenceState, ServiceResult, ensure,
+    ensure, ForumContext, ForumError, ForumService, PmPreferenceState, ServiceResult,
 };
 
 pub struct ProfileActions<S: ForumService + Clone> {

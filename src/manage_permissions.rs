@@ -1,5 +1,5 @@
 use crate::services::{
-    ForumContext, ForumError, ForumService, PermissionScope, ServiceResult, ensure,
+    ensure, ForumContext, ForumError, ForumService, PermissionScope, ServiceResult,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
@@ -352,11 +352,9 @@ mod tests {
             .iter()
             .find(|section| section["id"] == "calendar")
             .unwrap();
-        assert!(
-            calendar_section["permissions"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        assert!(calendar_section["permissions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

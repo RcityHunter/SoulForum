@@ -1,14 +1,15 @@
 use std::{env, sync::OnceLock};
 
 use axum::{
-    RequestPartsExt, async_trait,
+    async_trait,
     extract::FromRequestParts,
     http::request::Parts,
     response::{IntoResponse, Response},
+    RequestPartsExt,
 };
+use axum_extra::headers::{authorization::Bearer, Authorization};
 use axum_extra::TypedHeader;
-use axum_extra::headers::{Authorization, authorization::Bearer};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 /// JWT Claims expected from Rainbow-Auth tokens.
@@ -22,6 +23,20 @@ pub struct AuthClaims {
     pub session_id: Option<String>,
     #[serde(default, skip)]
     pub token: Option<String>,
+}
+
+impl Default for AuthClaims {
+    fn default() -> Self {
+        Self {
+            sub: String::new(),
+            exp: 0,
+            iat: 0,
+            role: None,
+            permissions: None,
+            session_id: None,
+            token: None,
+        }
+    }
 }
 
 /// Rejection type returned when auth fails.
@@ -86,8 +101,8 @@ where
 
         let (decoding_key, validation) = decoding_config()?;
 
-        let mut token_data =
-            decode::<AuthClaims>(bearer.token(), decoding_key, validation).map_err(|_| AuthError::InvalidToken)?;
+        let mut token_data = decode::<AuthClaims>(bearer.token(), decoding_key, validation)
+            .map_err(|_| AuthError::InvalidToken)?;
         token_data.claims.token = Some(bearer.token().to_string());
 
         Ok(token_data.claims)

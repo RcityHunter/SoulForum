@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, Query, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -15,8 +15,8 @@ use btc_forum_rust::{
     surreal::SurrealUser,
 };
 use btc_forum_shared::{
-    AdminAccount, AdminAccountsResponse, AdminGroup, AdminGroupsResponse, AdminNotifyPayload,
-    ActionLogEntry, ActionLogsResponse, AdminNotifyResponse, AdminUser, AdminUsersResponse,
+    ActionLogEntry, ActionLogsResponse, AdminAccount, AdminAccountsResponse, AdminGroup,
+    AdminGroupsResponse, AdminNotifyPayload, AdminNotifyResponse, AdminUser, AdminUsersResponse,
     BanApplyResponse, BanListResponse, BanMemberView, BanPayload, BanRevokeResponse, BanRuleView,
     BoardAccessPayload, BoardAccessResponse, BoardPermissionEntry, BoardPermissionPayload,
     BoardPermissionResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
@@ -25,7 +25,7 @@ use btc_forum_shared::{
 use super::{
     auth::{ensure_user_ctx, require_auth},
     error::api_error_from_status,
-    guards::{ensure_admin, enforce_rate, load_board_access, validate_content, verify_csrf},
+    guards::{enforce_rate, ensure_admin, load_board_access, validate_content, verify_csrf},
     state::{run_forum_blocking, AppState},
     utils::sanitize_input,
 };
@@ -228,8 +228,7 @@ pub(crate) async fn admin_notify(
         return resp.into_response();
     }
     if payload.user_ids.is_empty() {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "user_ids required")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "user_ids required").into_response();
     }
     if payload.user_ids.len() > 50 {
         return api_error_from_status(StatusCode::BAD_REQUEST, "user_ids too many (max 50)")
@@ -298,10 +297,8 @@ pub(crate) async fn list_bans(
     .await
     {
         Ok((bans, members)) => {
-            let member_map: HashMap<i64, String> = members
-                .into_iter()
-                .map(|m| (m.id, m.name))
-                .collect();
+            let member_map: HashMap<i64, String> =
+                members.into_iter().map(|m| (m.id, m.name)).collect();
             let mut view: Vec<BanRuleView> = Vec::new();
             for ban in bans {
                 let mut member_ids: Vec<i64> = Vec::new();
@@ -434,8 +431,7 @@ pub(crate) async fn revoke_ban(
     }
     let ban_id = payload.ban_id.or(payload.member_id).unwrap_or(0);
     if ban_id == 0 {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "ban_id required")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "ban_id required").into_response();
     }
     match run_forum_blocking(&state, move |forum| forum.delete_ban_rule(ban_id)).await {
         Ok(_) => (
@@ -556,12 +552,15 @@ pub(crate) async fn update_board_access(
         return resp.into_response();
     }
     if payload.allowed_groups.len() > 1000 {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "too many groups")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "too many groups").into_response();
     }
     let board_id = payload.board_id.clone();
     let allowed_groups = payload.allowed_groups.clone();
-    match run_forum_blocking(&state, move |forum| forum.set_board_access(&board_id, &allowed_groups)).await {
+    match run_forum_blocking(&state, move |forum| {
+        forum.set_board_access(&board_id, &allowed_groups)
+    })
+    .await
+    {
         Ok(_) => (
             StatusCode::OK,
             Json(UpdateBoardAccessResponse {

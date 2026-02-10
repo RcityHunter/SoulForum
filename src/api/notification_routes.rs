@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
@@ -21,7 +21,9 @@ use super::{
     utils::sanitize_input,
 };
 
-fn to_notification(note: btc_forum_rust::surreal::SurrealNotification) -> btc_forum_shared::Notification {
+fn to_notification(
+    note: btc_forum_rust::surreal::SurrealNotification,
+) -> btc_forum_shared::Notification {
     btc_forum_shared::Notification {
         id: note.id.unwrap_or_default(),
         user: note.user,
@@ -106,14 +108,9 @@ pub(crate) async fn mark_notification_read(
         return resp.into_response();
     }
     if payload.id.trim().is_empty() {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "id required")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "id required").into_response();
     }
-    match state
-        .surreal
-        .mark_notification_read(&payload.id)
-        .await
-    {
+    match state.surreal.mark_notification_read(&payload.id).await {
         Ok(_) => (
             StatusCode::OK,
             Json(MarkNotificationResponse {

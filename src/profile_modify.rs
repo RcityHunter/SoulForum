@@ -1,5 +1,5 @@
 use crate::services::{
-    ForumContext, ForumError, ForumService, MembergroupData, ServiceResult, ensure,
+    ensure, ForumContext, ForumError, ForumService, MembergroupData, ServiceResult,
 };
 use serde_json::json;
 use std::collections::HashSet;

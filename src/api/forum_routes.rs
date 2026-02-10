@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde::Deserialize;
 use std::{net::SocketAddr, time::Duration};
@@ -21,10 +21,10 @@ use btc_forum_shared::{
 
 use super::{
     auth::{ensure_user_ctx, require_auth, user_groups},
-    error::{api_error},
+    error::api_error,
     guards::{
-        ensure_board_access, ensure_permission, ensure_permission_for_board, enforce_rate,
-        fetch_topic_board_id, validate_content, verify_csrf, load_board_access,
+        enforce_rate, ensure_board_access, ensure_permission, ensure_permission_for_board,
+        fetch_topic_board_id, load_board_access, validate_content, verify_csrf,
     },
     state::AppState,
     utils::sanitize_input,
@@ -83,7 +83,7 @@ pub(crate) async fn surreal_posts(
                 ErrorCode::Internal,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -137,7 +137,7 @@ pub(crate) async fn create_surreal_board(
                 ErrorCode::Validation,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -162,12 +162,17 @@ pub(crate) async fn surreal_boards(
                         if ctx.user_info.is_admin {
                             return true;
                         }
-                        if let Some(rule) = rules.iter().find(|r| r.id == b.id.clone().unwrap_or_default()) {
+                        if let Some(rule) = rules
+                            .iter()
+                            .find(|r| r.id == b.id.clone().unwrap_or_default())
+                        {
                             if rule.allowed_groups.is_empty() {
                                 return true;
                             }
                             let groups = user_groups(&ctx);
-                            rule.allowed_groups.iter().any(|gid| groups.iter().any(|g| g == gid))
+                            rule.allowed_groups
+                                .iter()
+                                .any(|gid| groups.iter().any(|g| g == gid))
                         } else {
                             true
                         }
@@ -207,7 +212,7 @@ pub(crate) async fn surreal_boards(
                 ErrorCode::Internal,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -287,7 +292,7 @@ pub(crate) async fn create_surreal_topic(
                 ErrorCode::Validation,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -327,7 +332,7 @@ pub(crate) async fn list_surreal_topics(
                 ErrorCode::Internal,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -396,7 +401,7 @@ pub(crate) async fn create_surreal_topic_post(
                 ErrorCode::Validation,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
@@ -438,7 +443,7 @@ pub(crate) async fn list_surreal_posts_for_topic(
                 ErrorCode::Internal,
                 err.to_string(),
             )
-                .into_response()
+            .into_response()
         }
     }
 }

@@ -7,11 +7,7 @@ use serde_json::json;
 fn claims_debuggable() {
     let claims = AuthClaims {
         sub: "tester".into(),
-        exp: 0,
-        iat: 0,
-        session_id: None,
-        role: None,
-        permissions: None,
+        ..Default::default()
     };
     assert_eq!(claims.sub, "tester");
 }

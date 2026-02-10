@@ -1,8 +1,8 @@
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode, Json};
 
 use btc_forum_rust::{
-    services::{BoardAccessEntry, ForumContext, ForumError, ForumService},
     security::load_permissions,
+    services::{BoardAccessEntry, ForumContext, ForumError, ForumService},
     surreal::SurrealClient,
 };
 
@@ -50,26 +50,23 @@ pub(crate) async fn ensure_permission_for_board(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load permissions",
             )
-        })?
-        {
+        })? {
             Ok(updated) => updated,
-            Err(err) => {
-                match &err {
-                    ForumError::PermissionDenied(message) => {
-                        return Err(api_error_from_status(
-                            StatusCode::FORBIDDEN,
-                            message.clone(),
-                        ));
-                    }
-                    _ => {
-                        tracing::error!(error = %err, "failed to load permissions");
-                        return Err(api_error_from_status(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "failed to load permissions",
-                        ));
-                    }
+            Err(err) => match &err {
+                ForumError::PermissionDenied(message) => {
+                    return Err(api_error_from_status(
+                        StatusCode::FORBIDDEN,
+                        message.clone(),
+                    ));
                 }
-            }
+                _ => {
+                    tracing::error!(error = %err, "failed to load permissions");
+                    return Err(api_error_from_status(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to load permissions",
+                    ));
+                }
+            },
         };
     }
     ensure_permission(state, &working, permission)
@@ -113,7 +110,9 @@ pub(crate) async fn ensure_board_access(
     ))
 }
 
-pub(crate) fn ensure_admin(ctx: &ForumContext) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
+pub(crate) fn ensure_admin(
+    ctx: &ForumContext,
+) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
     if ctx.user_info.is_admin || ctx.user_info.permissions.contains("admin") {
         Ok(())
     } else {
@@ -124,7 +123,9 @@ pub(crate) fn ensure_admin(ctx: &ForumContext) -> Result<(), (StatusCode, Json<b
     }
 }
 
-pub(crate) fn verify_csrf(headers: &axum::http::HeaderMap) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
+pub(crate) fn verify_csrf(
+    headers: &axum::http::HeaderMap,
+) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
     let header_token = headers
         .get("x-csrf-token")
         .and_then(|v| v.to_str().ok())
@@ -218,7 +219,9 @@ pub(crate) async fn fetch_topic_board_id(client: &SurrealClient, topic_id: &str)
     rows.into_iter().find_map(|r| r.board_id)
 }
 
-pub(crate) async fn load_board_access(state: &AppState) -> Result<Vec<BoardAccessEntry>, ForumError> {
+pub(crate) async fn load_board_access(
+    state: &AppState,
+) -> Result<Vec<BoardAccessEntry>, ForumError> {
     let forum_service = state.forum_service.clone();
     tokio::task::spawn_blocking(move || forum_service.list_board_access())
         .await

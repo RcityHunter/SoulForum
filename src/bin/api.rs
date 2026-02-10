@@ -1,18 +1,13 @@
 use axum::{
-    Router,
     body::Body,
-    http::{HeaderValue, Method, Request, header::HeaderName},
+    http::{header::HeaderName, HeaderValue, Method, Request},
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
+    Router,
 };
 use dotenvy::dotenv;
-use std::{
-    env,
-    net::SocketAddr,
-    sync::Arc,
-    time::Instant,
-};
+use std::{env, net::SocketAddr, sync::Arc, time::Instant};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -20,35 +15,37 @@ use tracing_subscriber::EnvFilter;
 use btc_forum_rust::{
     rainbow_auth::RainbowAuthClient,
     services::surreal::SurrealService,
-    surreal::{SurrealForumService, connect_from_env},
+    surreal::{connect_from_env, SurrealForumService},
 };
 use tower_http::cors::CorsLayer;
 
 #[path = "../api/mod.rs"]
 mod api;
 
-use api::auth_routes::{auth_me, login, register};
-use api::attachment_routes::{
-    create_attachment_meta, delete_attachment_api, list_attachments, serve_upload, upload_attachment,
-};
 use api::admin_routes::{
-    admin_notify, apply_ban, get_board_access, get_board_permissions, list_action_logs, list_admins,
-    list_bans, list_groups, list_users, revoke_ban, update_board_access, update_board_permissions,
+    admin_notify, apply_ban, get_board_access, get_board_permissions, list_action_logs,
+    list_admins, list_bans, list_groups, list_users, revoke_ban, update_board_access,
+    update_board_permissions,
 };
+use api::attachment_routes::{
+    create_attachment_meta, delete_attachment_api, list_attachments, serve_upload,
+    upload_attachment,
+};
+use api::auth_routes::{auth_me, login, register};
 use api::demo_routes::{demo_post, demo_surreal, health, metrics, surreal_post, ui};
+use api::forum_routes::{
+    create_surreal_board, create_surreal_topic, create_surreal_topic_post,
+    list_surreal_posts_for_topic, list_surreal_topics, surreal_boards, surreal_posts,
+};
+use api::guards::verify_csrf;
 use api::notification_routes::{create_notification, list_notifications, mark_notification_read};
 use api::personal_message_routes::{
     delete_personal_messages_api, list_personal_messages, mark_personal_messages_read,
     send_personal_message_api,
 };
-use api::forum_routes::{
-    create_surreal_board, create_surreal_topic, create_surreal_topic_post, list_surreal_posts_for_topic,
-    list_surreal_topics, surreal_boards, surreal_posts,
-};
-use api::guards::verify_csrf;
 use api::state::{
-    csrf_enabled, find_csrf_cookie, generate_csrf_token, rainbow_auth_base_url,
-    AppState, RateLimiter,
+    csrf_enabled, find_csrf_cookie, generate_csrf_token, rainbow_auth_base_url, AppState,
+    RateLimiter,
 };
 
 fn validate_config() {
@@ -63,7 +60,11 @@ fn validate_config() {
     if !csrf_enabled() {
         tracing::warn!("ENFORCE_CSRF=0 (CSRF protection disabled)");
     }
-    if env::var("SURREAL_ENDPOINT").ok().map(|v| v.is_empty()).unwrap_or(false) {
+    if env::var("SURREAL_ENDPOINT")
+        .ok()
+        .map(|v| v.is_empty())
+        .unwrap_or(false)
+    {
         panic!("SURREAL_ENDPOINT cannot be empty");
     }
     if rainbow_auth_base_url().trim().is_empty() {
@@ -79,7 +80,8 @@ async fn csrf_layer(mut req: Request<Body>, next: Next) -> Response {
 
     if csrf_on {
         // Issue a token cookie for safe methods to reduce friction on first load.
-        if matches!(method, Method::GET | Method::OPTIONS) && find_csrf_cookie(req.headers()).is_none()
+        if matches!(method, Method::GET | Method::OPTIONS)
+            && find_csrf_cookie(req.headers()).is_none()
         {
             set_cookie = Some(generate_csrf_token());
         }
@@ -110,11 +112,11 @@ async fn csrf_layer(mut req: Request<Body>, next: Next) -> Response {
 mod tests {
     use super::*;
     use axum::{
-        Router,
         body::Body,
         http::{HeaderMap, HeaderValue, Method, Request, StatusCode},
         middleware::from_fn,
         routing::post,
+        Router,
     };
     use btc_forum_rust::auth::AuthClaims;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -166,11 +168,7 @@ mod tests {
     fn rate_key_with_ip() {
         let claims = AuthClaims {
             sub: "alice".into(),
-            exp: 0,
-            iat: 0,
-            session_id: None,
-            role: None,
-            permissions: None,
+            ..Default::default()
         };
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let key = rate_key(&claims, Some(&addr));
@@ -229,8 +227,14 @@ async fn main() {
     let surreal = SurrealForumService::new(surreal);
     let forum_service = SurrealService::new(surreal.client().clone());
     let rainbow_auth = RainbowAuthClient::new(rainbow_auth_base_url());
-    let cors_origin =
-        env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+    let cors_origin = env::var("CORS_ORIGIN")
+        .unwrap_or_else(|_| "http://127.0.0.1:8081,http://forum.local".to_string());
+    let cors_origins: Vec<HeaderValue> = cors_origin
+        .split(',')
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.parse::<HeaderValue>().expect("invalid CORS_ORIGIN"))
+        .collect();
     let state = AppState {
         surreal,
         forum_service,
@@ -249,7 +253,10 @@ async fn main() {
         .route("/demo/surreal", post(demo_surreal))
         .route("/surreal/post", post(surreal_post))
         .route("/surreal/posts", get(surreal_posts))
-        .route("/surreal/notifications", get(list_notifications).post(create_notification))
+        .route(
+            "/surreal/notifications",
+            get(list_notifications).post(create_notification),
+        )
         .route(
             "/surreal/notifications/mark_read",
             post(mark_notification_read),
@@ -258,14 +265,8 @@ async fn main() {
             "/surreal/attachments",
             get(list_attachments).post(create_attachment_meta),
         )
-        .route(
-            "/surreal/attachments/delete",
-            post(delete_attachment_api),
-        )
-        .route(
-            "/surreal/attachments/upload",
-            post(upload_attachment),
-        )
+        .route("/surreal/attachments/delete", post(delete_attachment_api))
+        .route("/surreal/attachments/upload", post(upload_attachment))
         .route("/uploads/*path", get(serve_upload))
         .route("/surreal/personal_messages", get(list_personal_messages))
         .route(
@@ -300,18 +301,25 @@ async fn main() {
         .route("/admin/bans/apply", post(apply_ban))
         .route("/admin/bans/revoke", post(revoke_ban))
         .route("/admin/notify", post(admin_notify))
-        .route("/admin/board_access", get(get_board_access).post(update_board_access))
+        .route(
+            "/admin/board_access",
+            get(get_board_access).post(update_board_access),
+        )
         .route(
             "/admin/board_permissions",
             get(get_board_permissions).post(update_board_permissions),
         )
         .layer(axum::middleware::from_fn(csrf_layer))
         .layer({
-            let origin = cors_origin
-                .parse::<HeaderValue>()
-                .expect("invalid CORS_ORIGIN");
+            let origins = if cors_origins.is_empty() {
+                vec!["http://127.0.0.1:8081"
+                    .parse::<HeaderValue>()
+                    .expect("invalid default CORS origin")]
+            } else {
+                cors_origins.clone()
+            };
             CorsLayer::new()
-                .allow_origin(origin)
+                .allow_origin(origins)
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers([
                     axum::http::header::AUTHORIZATION,
@@ -347,7 +355,7 @@ fn init_tracing() {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{SignalKind, signal};
+        use tokio::signal::unix::{signal, SignalKind};
         let mut terminate =
             signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
         tokio::select! {

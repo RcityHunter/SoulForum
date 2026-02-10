@@ -1,6 +1,6 @@
 use btc_forum_rust::controller::post::PostController;
-use btc_forum_rust::personal_messages::{PersonalMessageController, ssi_welcome};
-use btc_forum_rust::services::{ForumContext, surreal::SurrealService};
+use btc_forum_rust::personal_messages::{ssi_welcome, PersonalMessageController};
+use btc_forum_rust::services::{surreal::SurrealService, ForumContext};
 use btc_forum_rust::surreal::connect_from_env;
 
 fn main() {

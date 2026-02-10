@@ -1,8 +1,8 @@
 use crate::security::is_not_banned;
 use crate::services::{ForumContext, ForumError, ForumService, MemberRecord, ServiceResult};
 use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use serde_json::json;
 
@@ -12,16 +12,16 @@ pub fn rebuild_mod_cache<S: ForumService>(
 ) -> ServiceResult<()> {
     let boards = service.list_board_access()?;
     let memberships = &ctx.user_info.groups;
-        let visible: Vec<_> = boards
-            .iter()
-            .filter(|board| {
-                board
-                    .allowed_groups
-                    .iter()
-                    .any(|group| memberships.contains(group))
-            })
-            .map(|board| board.id.clone())
-            .collect();
+    let visible: Vec<_> = boards
+        .iter()
+        .filter(|board| {
+            board
+                .allowed_groups
+                .iter()
+                .any(|group| memberships.contains(group))
+        })
+        .map(|board| board.id.clone())
+        .collect();
     ctx.session.set(
         "mod_cache",
         json!({

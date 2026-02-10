@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use serde::Deserialize;
 use tracing::error;
@@ -67,7 +67,13 @@ pub(crate) async fn list_personal_messages(
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
-    let folder = match query.folder.as_deref().unwrap_or("inbox").to_lowercase().as_str() {
+    let folder = match query
+        .folder
+        .as_deref()
+        .unwrap_or("inbox")
+        .to_lowercase()
+        .as_str()
+    {
         "sent" => PersonalMessageFolder::Sent,
         _ => PersonalMessageFolder::Inbox,
     };
@@ -76,7 +82,9 @@ pub(crate) async fn list_personal_messages(
     let label = query.label;
     match run_forum_blocking(&state, move |forum| {
         forum.personal_message_page(ctx.user_info.id, folder.clone(), label, offset, limit)
-    }).await {
+    })
+    .await
+    {
         Ok(page) => (
             StatusCode::OK,
             Json(PersonalMessageListResponse {
@@ -136,11 +144,11 @@ pub(crate) async fn send_personal_message_api(
         }
         Ok(ids)
     })
-    .await {
+    .await
+    {
         Ok(ids) => ids,
         Err(err) => {
-            return api_error_from_status(StatusCode::BAD_REQUEST, err.to_string())
-                .into_response();
+            return api_error_from_status(StatusCode::BAD_REQUEST, err.to_string()).into_response();
         }
     };
 
@@ -183,15 +191,18 @@ pub(crate) async fn mark_personal_messages_read(
         return resp.into_response();
     }
     if payload.ids.is_empty() {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "ids required")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "ids required").into_response();
     }
     let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
     let ids = payload.ids.clone();
-    match run_forum_blocking(&state, move |forum| forum.mark_personal_messages(ctx.user_info.id, &ids, true)).await {
+    match run_forum_blocking(&state, move |forum| {
+        forum.mark_personal_messages(ctx.user_info.id, &ids, true)
+    })
+    .await
+    {
         Ok(_) => (
             StatusCode::OK,
             Json(PersonalMessageIdsResponse {
@@ -222,8 +233,7 @@ pub(crate) async fn delete_personal_messages_api(
         return resp.into_response();
     }
     if payload.ids.is_empty() {
-        return api_error_from_status(StatusCode::BAD_REQUEST, "ids required")
-            .into_response();
+        return api_error_from_status(StatusCode::BAD_REQUEST, "ids required").into_response();
     }
     let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
         Ok(value) => value,
@@ -233,7 +243,8 @@ pub(crate) async fn delete_personal_messages_api(
     match run_forum_blocking(&state, move |forum| {
         forum.delete_personal_messages(ctx.user_info.id, PersonalMessageFolder::Inbox, &ids)
     })
-    .await {
+    .await
+    {
         Ok(_) => (
             StatusCode::OK,
             Json(PersonalMessageIdsResponse {

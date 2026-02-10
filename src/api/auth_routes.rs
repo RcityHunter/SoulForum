@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{ConnectInfo, State},
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
@@ -46,11 +46,7 @@ pub(crate) async fn register(
         .into_response();
     }
 
-    match state
-        .rainbow_auth
-        .register(email, &payload.password)
-        .await
-    {
+    match state.rainbow_auth.register(email, &payload.password).await {
         Ok(message) => (
             StatusCode::OK,
             Json(RegisterResponse {
@@ -77,11 +73,7 @@ pub(crate) async fn login(
         return api_error_from_status(StatusCode::BAD_REQUEST, "email required").into_response();
     }
 
-    match state
-        .rainbow_auth
-        .login(email, &payload.password)
-        .await
-    {
+    match state.rainbow_auth.login(email, &payload.password).await {
         Ok(login) => {
             let forum_user = match state
                 .surreal
@@ -119,7 +111,10 @@ pub(crate) async fn login(
     }
 }
 
-pub(crate) async fn auth_me(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+pub(crate) async fn auth_me(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
     let Some(token) = bearer_from_headers(&headers) else {
         return api_error(
             StatusCode::UNAUTHORIZED,
@@ -131,11 +126,7 @@ pub(crate) async fn auth_me(State(state): State<AppState>, headers: axum::http::
 
     match state.rainbow_auth.me(&token).await {
         Ok(user) => {
-            let member_id = match state
-                .surreal
-                .ensure_user(&user.email, None, None)
-                .await
-            {
+            let member_id = match state.surreal.ensure_user(&user.email, None, None).await {
                 Ok(forum_user) => forum_user.legacy_id(),
                 Err(err) => {
                     error!(error = %err, "failed to sync user for auth/me");

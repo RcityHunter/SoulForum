@@ -1,10 +1,10 @@
 use axum::{
-    Router,
     body::Body,
     http::{Request, StatusCode},
-    middleware::{Next, from_fn},
+    middleware::{from_fn, Next},
     response::IntoResponse,
     routing::post,
+    Router,
 };
 use tower::ServiceExt;
 
@@ -67,17 +67,12 @@ async fn unauthorized_when_no_permission() {
 async fn jwt_claims_mock() {
     let claims = AuthClaims {
         sub: "user".into(),
-        exp: 0,
-        iat: 0,
-        session_id: None,
-        role: None,
         permissions: Some(vec!["post_new".into()]),
+        ..Default::default()
     };
     assert_eq!(claims.sub, "user");
-    assert!(
-        claims
-            .permissions
-            .unwrap()
-            .contains(&"post_new".to_string())
-    );
+    assert!(claims
+        .permissions
+        .unwrap()
+        .contains(&"post_new".to_string()));
 }

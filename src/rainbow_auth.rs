@@ -16,7 +16,11 @@ impl RainbowAuthClient {
         Self { base_url, http }
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> Result<RainbowLoginResponse, RainbowAuthError> {
+    pub async fn login(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<RainbowLoginResponse, RainbowAuthError> {
         let url = format!("{}/api/auth/login", self.base_url.trim_end_matches('/'));
         let resp = self
             .http
@@ -40,7 +44,10 @@ impl RainbowAuthClient {
         let status = resp.status();
         let body = resp.text().await.map_err(RainbowAuthError::from)?;
         if !status.is_success() {
-            return Err(RainbowAuthError::Http { status, message: body });
+            return Err(RainbowAuthError::Http {
+                status,
+                message: body,
+            });
         }
         Ok(body)
     }
@@ -121,7 +128,10 @@ async fn parse_json_response<T: for<'de> Deserialize<'de>>(
     let status = resp.status();
     let text = resp.text().await.map_err(RainbowAuthError::from)?;
     if !status.is_success() {
-        return Err(RainbowAuthError::Http { status, message: text });
+        return Err(RainbowAuthError::Http {
+            status,
+            message: text,
+        });
     }
     let parsed = serde_json::from_str(&text)?;
     Ok(parsed)

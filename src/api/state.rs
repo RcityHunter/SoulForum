@@ -8,7 +8,7 @@ use std::{
 
 use btc_forum_rust::{
     rainbow_auth::RainbowAuthClient,
-    services::{ForumError, surreal::SurrealService},
+    services::{surreal::SurrealService, ForumError},
     surreal::SurrealForumService,
 };
 
@@ -96,21 +96,24 @@ pub(crate) fn max_upload_bytes() -> i64 {
             .and_then(|v| v.parse().ok())
             .filter(|v| *v > 0)
             .unwrap_or(10)
-    }) * 1024 * 1024
+    }) * 1024
+        * 1024
 }
 
 pub(crate) fn allowed_mime() -> Option<&'static [String]> {
-    ALLOWED_MIME.get_or_init(|| {
-        env::var("ALLOWED_MIME")
-            .ok()
-            .map(|v| {
-                v.split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            })
-            .filter(|list: &Vec<String>| !list.is_empty())
-    }).as_deref()
+    ALLOWED_MIME
+        .get_or_init(|| {
+            env::var("ALLOWED_MIME")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .filter(|list: &Vec<String>| !list.is_empty())
+        })
+        .as_deref()
 }
 
 pub(crate) fn generate_csrf_token() -> String {

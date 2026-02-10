@@ -1,6 +1,6 @@
 use crate::services::{
-    ForumContext, ForumError, ForumService, GroupAssignType, MembergroupListEntry,
-    MembergroupListType, PermissionSnapshot, ServiceResult, ensure,
+    ensure, ForumContext, ForumError, ForumService, GroupAssignType, MembergroupListEntry,
+    MembergroupListType, PermissionSnapshot, ServiceResult,
 };
 use std::collections::HashMap;
 

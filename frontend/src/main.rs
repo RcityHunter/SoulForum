@@ -1,32 +1,32 @@
+use btc_forum_shared::{
+    AdminAccount, AdminAccountsResponse, AdminGroup, AdminGroupsResponse, AdminUser,
+    AdminUsersResponse, ApiError, AttachmentCreateResponse, AttachmentDeletePayload,
+    AttachmentDeleteResponse, AttachmentListResponse, AttachmentMeta, AttachmentUploadResponse,
+    AuthMeResponse, AuthResponse, BanApplyResponse, BanListResponse, BanPayload, BanRevokeResponse,
+    BanRuleView, Board, BoardAccessEntry, BoardAccessPayload, BoardAccessResponse,
+    BoardPermissionEntry, BoardPermissionPayload, BoardPermissionResponse, BoardsResponse,
+    CreateAttachmentPayload, CreateBoardPayload, CreateBoardResponse, CreateNotificationPayload,
+    CreatePostPayload, CreateTopicPayload, HealthResponse, LoginRequest, MarkNotificationPayload,
+    MarkNotificationResponse, Notification, NotificationCreateResponse, NotificationListResponse,
+    PersonalMessage, PersonalMessageIdsPayload, PersonalMessageIdsResponse,
+    PersonalMessageListResponse, PersonalMessageSendPayload, PersonalMessageSendResponse, Post,
+    PostResponse, PostsResponse, RegisterRequest, RegisterResponse, Topic, TopicCreateResponse,
+    TopicsResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
+};
 use dioxus::prelude::*;
 use reqwasm::http::{Request, RequestCredentials};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::rc::Rc;
 use web_sys::wasm_bindgen::JsCast;
-use web_sys::{FormData, HtmlDocument, HtmlInputElement, File};
-use btc_forum_shared::{
-    AdminAccount, AdminAccountsResponse, AdminGroup, AdminGroupsResponse, AdminUser,
-    AdminUsersResponse, ApiError, AttachmentCreateResponse, AttachmentDeletePayload,
-    AttachmentDeleteResponse, AttachmentListResponse, AttachmentMeta, AttachmentUploadResponse,
-    AuthMeResponse, AuthResponse, AuthUser, BanApplyResponse, BanListResponse, BanPayload,
-    BanRevokeResponse, BanRuleView, Board, BoardAccessEntry, BoardAccessPayload,
-    BoardAccessResponse, BoardPermissionEntry, BoardPermissionPayload, BoardPermissionResponse,
-    BoardsResponse, CreateAttachmentPayload, CreateBoardPayload, CreateBoardResponse,
-    CreatePostPayload, CreateNotificationPayload, CreateTopicPayload, HealthResponse, LoginRequest,
-    MarkNotificationPayload, MarkNotificationResponse, Notification, NotificationCreateResponse,
-    NotificationListResponse, PersonalMessage, PersonalMessageIdsPayload, PersonalMessageIdsResponse, PersonalMessageListResponse,
-    PersonalMessageSendPayload, PersonalMessageSendResponse,
-    Post, PostResponse, PostsResponse, RegisterRequest, RegisterResponse, Topic,
-    TopicCreateResponse, TopicsResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
-};
+use web_sys::{File, FormData, HtmlDocument, HtmlInputElement};
 mod api {
     pub mod errors;
 }
 use api::errors::format_api_error;
 
 fn main() {
-    launch(App);
+    launch(app);
 }
 
 const BUILD_TAG: &str = "ban-click-v2";
@@ -34,12 +34,41 @@ const BUILD_TAG: &str = "ban-click-v2";
 // ---------- Types ----------
 
 // ---------- Utilities ----------
-fn window() -> Option<web_sys::Window> { web_sys::window() }
-fn save_token_to_storage(token: &str) { if let Some(win) = window() { if let Ok(Some(storage)) = win.local_storage() { let _ = storage.set_item("jwt_token", token); } } }
-fn load_token_from_storage() -> Option<String> { window().and_then(|win| win.local_storage().ok().flatten()).and_then(|s| s.get_item("jwt_token").ok().flatten()) }
-fn save_user_to_storage(name: &str) { if let Some(win) = window() { if let Ok(Some(storage)) = win.local_storage() { let _ = storage.set_item("user_name", name); } } }
-fn load_user_from_storage() -> Option<String> { window().and_then(|win| win.local_storage().ok().flatten()).and_then(|s| s.get_item("user_name").ok().flatten()) }
-fn clear_auth_storage() { if let Some(win) = window() { if let Ok(Some(storage)) = win.local_storage() { let _ = storage.remove_item("jwt_token"); let _ = storage.remove_item("user_name"); } } }
+fn window() -> Option<web_sys::Window> {
+    web_sys::window()
+}
+fn save_token_to_storage(token: &str) {
+    if let Some(win) = window() {
+        if let Ok(Some(storage)) = win.local_storage() {
+            let _ = storage.set_item("jwt_token", token);
+        }
+    }
+}
+fn load_token_from_storage() -> Option<String> {
+    window()
+        .and_then(|win| win.local_storage().ok().flatten())
+        .and_then(|s| s.get_item("jwt_token").ok().flatten())
+}
+fn save_user_to_storage(name: &str) {
+    if let Some(win) = window() {
+        if let Ok(Some(storage)) = win.local_storage() {
+            let _ = storage.set_item("user_name", name);
+        }
+    }
+}
+fn load_user_from_storage() -> Option<String> {
+    window()
+        .and_then(|win| win.local_storage().ok().flatten())
+        .and_then(|s| s.get_item("user_name").ok().flatten())
+}
+fn clear_auth_storage() {
+    if let Some(win) = window() {
+        if let Ok(Some(storage)) = win.local_storage() {
+            let _ = storage.remove_item("jwt_token");
+            let _ = storage.remove_item("user_name");
+        }
+    }
+}
 fn read_csrf_cookie() -> Option<String> {
     let doc = window()?.document()?;
     let html: HtmlDocument = doc.dyn_into().ok()?;
@@ -50,21 +79,37 @@ fn read_csrf_cookie() -> Option<String> {
         .map(|v| v.to_string())
 }
 
-async fn get_json<T: DeserializeOwned>(base: &str, path: &str, token: &str, csrf: &str) -> Result<T, String> {
-    let url = format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'));
+async fn get_json<T: DeserializeOwned>(
+    base: &str,
+    path: &str,
+    token: &str,
+    csrf: &str,
+) -> Result<T, String> {
+    let url = format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
     let mut req = Request::get(&url);
-    if !token.trim().is_empty() { req = req.header("Authorization", &format!("Bearer {}", token)); }
+    if !token.trim().is_empty() {
+        req = req.header("Authorization", &format!("Bearer {}", token));
+    }
     let csrf_value = if csrf.trim().is_empty() {
         read_csrf_cookie().unwrap_or_default()
     } else {
         csrf.to_string()
     };
     if !csrf_value.trim().is_empty() {
-        req = req.header("X-CSRF-TOKEN", &csrf_value).credentials(RequestCredentials::Include);
+        req = req
+            .header("X-CSRF-TOKEN", &csrf_value)
+            .credentials(RequestCredentials::Include);
     }
     let resp = req.send().await.map_err(|e| format!("网络错误: {e}"))?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     if !resp.ok() {
         if let Ok(err) = serde_json::from_str::<ApiError>(&text) {
             return Err(format_api_error(status, err));
@@ -74,21 +119,43 @@ async fn get_json<T: DeserializeOwned>(base: &str, path: &str, token: &str, csrf
     serde_json::from_str(&text).map_err(|e| format!("解析失败: {e}，原始响应: {text}"))
 }
 
-async fn post_json<T: DeserializeOwned, B: Serialize>(base: &str, path: &str, token: &str, csrf: &str, body: &B) -> Result<T, String> {
-    let url = format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'));
+async fn post_json<T: DeserializeOwned, B: Serialize>(
+    base: &str,
+    path: &str,
+    token: &str,
+    csrf: &str,
+    body: &B,
+) -> Result<T, String> {
+    let url = format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
     let mut req = Request::post(&url);
-    if !token.trim().is_empty() { req = req.header("Authorization", &format!("Bearer {}", token)); }
+    if !token.trim().is_empty() {
+        req = req.header("Authorization", &format!("Bearer {}", token));
+    }
     let csrf_value = if csrf.trim().is_empty() {
         read_csrf_cookie().unwrap_or_default()
     } else {
         csrf.to_string()
     };
     if !csrf_value.trim().is_empty() {
-        req = req.header("X-CSRF-TOKEN", &csrf_value).credentials(RequestCredentials::Include);
+        req = req
+            .header("X-CSRF-TOKEN", &csrf_value)
+            .credentials(RequestCredentials::Include);
     }
-    let resp = req.header("Content-Type", "application/json").body(serde_json::to_string(body).unwrap()).send().await.map_err(|e| format!("网络错误: {e}"))?;
+    let resp = req
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(body).unwrap())
+        .send()
+        .await
+        .map_err(|e| format!("网络错误: {e}"))?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     if !resp.ok() {
         if let Ok(err) = serde_json::from_str::<ApiError>(&text) {
             return Err(format_api_error(status, err));
@@ -99,9 +166,9 @@ async fn post_json<T: DeserializeOwned, B: Serialize>(base: &str, path: &str, to
 }
 
 // ---------- App ----------
-fn App() -> Element {
+fn app() -> Element {
     // signals
-    let mut api_base = use_signal(|| "http://127.0.0.1:3000".to_string());
+    let mut api_base = use_signal(|| "/api".to_string());
     let mut token = use_signal(|| load_token_from_storage().unwrap_or_default());
     let mut current_user = use_signal(|| load_user_from_storage().unwrap_or_default());
     let mut status = use_signal(|| "等待操作...".to_string());
@@ -123,17 +190,19 @@ fn App() -> Element {
     let mut register_username = use_signal(|| "".to_string());
     let mut register_password = use_signal(|| "".to_string());
     let mut register_confirm = use_signal(|| "".to_string());
+    let mut show_topic_detail = use_signal(|| false);
+    let mut focused_post_id = use_signal(|| "".to_string());
 
-    let mut boards = use_signal(Vec::<Board>::new);
+    let boards = use_signal(Vec::<Board>::new);
     let mut topics = use_signal(Vec::<Topic>::new);
     let mut posts = use_signal(Vec::<Post>::new);
-    let mut board_access = use_signal(Vec::<BoardAccessEntry>::new);
-    let mut board_permissions = use_signal(Vec::<BoardPermissionEntry>::new);
-    let mut notifications = use_signal(Vec::<Notification>::new);
-    let mut attachments = use_signal(Vec::<AttachmentMeta>::new);
-    let mut attachment_base_url = use_signal(|| "/uploads".to_string());
+    let board_access = use_signal(Vec::<BoardAccessEntry>::new);
+    let board_permissions = use_signal(Vec::<BoardPermissionEntry>::new);
+    let notifications = use_signal(Vec::<Notification>::new);
+    let attachments = use_signal(Vec::<AttachmentMeta>::new);
+    let attachment_base_url = use_signal(|| "/uploads".to_string());
     let mut pm_folder = use_signal(|| "inbox".to_string());
-    let mut personal_messages = use_signal(Vec::<PersonalMessage>::new);
+    let personal_messages = use_signal(Vec::<PersonalMessage>::new);
     let mut pm_to = use_signal(|| "".to_string());
     let mut pm_subject = use_signal(|| "".to_string());
     let mut pm_body = use_signal(|| "".to_string());
@@ -154,10 +223,10 @@ fn App() -> Element {
     let mut ban_member_id = use_signal(|| "".to_string());
     let mut ban_hours = use_signal(|| "24".to_string());
     let mut ban_reason = use_signal(|| "".to_string());
-    let mut bans = use_signal(Vec::<BanRuleView>::new);
-    let mut admin_users = use_signal(Vec::<AdminUser>::new);
-    let mut admin_accounts = use_signal(Vec::<AdminAccount>::new);
-    let mut admin_groups = use_signal(Vec::<AdminGroup>::new);
+    let bans = use_signal(Vec::<BanRuleView>::new);
+    let admin_users = use_signal(Vec::<AdminUser>::new);
+    let admin_accounts = use_signal(Vec::<AdminAccount>::new);
+    let admin_groups = use_signal(Vec::<AdminGroup>::new);
     let mut admin_user_query = use_signal(|| "".to_string());
 
     // actions (login/register etc.)
@@ -178,7 +247,10 @@ fn App() -> Element {
         }
         spawn(async move {
             status.set("登录中...".into());
-            let payload = LoginRequest { email: user.clone(), password: pass.clone() };
+            let payload = LoginRequest {
+                email: user.clone(),
+                password: pass.clone(),
+            };
             match post_json::<AuthResponse, _>(&base, "/auth/login", "", "", &payload).await {
                 Ok(resp) => {
                     save_token_to_storage(&resp.token);
@@ -221,7 +293,8 @@ fn App() -> Element {
                 role: None,
                 permissions: None,
             };
-            match post_json::<RegisterResponse, _>(&base, "/auth/register", "", "", &payload).await {
+            match post_json::<RegisterResponse, _>(&base, "/auth/register", "", "", &payload).await
+            {
                 Ok(resp) => {
                     status.set(resp.message);
                 }
@@ -246,12 +319,26 @@ fn App() -> Element {
             status.set("创建版块中...".into());
             let payload = CreateBoardPayload {
                 name: name.clone(),
-                description: if desc.trim().is_empty() { None } else { Some(desc.clone()) },
+                description: if desc.trim().is_empty() {
+                    None
+                } else {
+                    Some(desc.clone())
+                },
             };
-            match post_json::<CreateBoardResponse, _>(&base, "/surreal/boards", &jwt, &csrf, &payload).await {
+            match post_json::<CreateBoardResponse, _>(
+                &base,
+                "/surreal/boards",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(_) => {
                     status.set(format!("版块已创建：{}", name));
-                    if let Ok(resp) = get_json::<BoardsResponse>(&base, "/surreal/boards", &jwt, &csrf).await {
+                    if let Ok(resp) =
+                        get_json::<BoardsResponse>(&base, "/surreal/boards", &jwt, &csrf).await
+                    {
                         boards_sig.set(resp.boards);
                     }
                 }
@@ -303,7 +390,12 @@ fn App() -> Element {
             status.set("加载版块中...".into());
             match get_json::<BoardsResponse>(&base, "/surreal/boards", &jwt, &csrf).await {
                 Ok(resp) => {
-                    selected_board.set(resp.boards.get(0).and_then(|b| b.id.clone()).unwrap_or_default());
+                    selected_board.set(
+                        resp.boards
+                            .get(0)
+                            .and_then(|b| b.id.clone())
+                            .unwrap_or_default(),
+                    );
                     boards.set(resp.boards);
                     status.set("版块加载完成".into());
                 }
@@ -334,6 +426,7 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut topics = topics.clone();
+        let mut posts = posts.clone();
         let selected_board_id = selected_board.read().clone();
         let mut selected_topic = selected_topic.clone();
         if selected_board_id.is_empty() {
@@ -346,10 +439,20 @@ fn App() -> Element {
             match get_json::<TopicsResponse>(&base, &path, &jwt, &csrf).await {
                 Ok(resp) => {
                     if let Some(first) = resp.topics.get(0).and_then(|t| t.id.clone()) {
-                        selected_topic.set(first);
+                        selected_topic.set(first.clone());
+                        let posts_path = format!("/surreal/topic/posts?topic_id={}", first);
+                        match get_json::<PostsResponse>(&base, &posts_path, &jwt, &csrf).await {
+                            Ok(posts_resp) => {
+                                posts.set(posts_resp.posts);
+                                status.set("主题/帖子加载完成".into());
+                            }
+                            Err(err) => status.set(format!("加载帖子失败：{err}")),
+                        }
+                    } else {
+                        posts.set(Vec::new());
+                        status.set("暂无主题".into());
                     }
                     topics.set(resp.topics);
-                    status.set("主题加载完成".into());
                 }
                 Err(err) => status.set(format!("加载主题失败：{err}")),
             }
@@ -392,7 +495,9 @@ fn App() -> Element {
         }
         spawn(async move {
             status.set("加载通知中...".into());
-            match get_json::<NotificationListResponse>(&base, "/surreal/notifications", &jwt, &csrf).await {
+            match get_json::<NotificationListResponse>(&base, "/surreal/notifications", &jwt, &csrf)
+                .await
+            {
                 Ok(resp) => {
                     list.set(resp.notifications);
                     status.set("通知加载完成".into());
@@ -418,7 +523,15 @@ fn App() -> Element {
                 body: "这是一条占位通知".to_string(),
                 user: None,
             };
-            match post_json::<NotificationCreateResponse, _>(&base, "/surreal/notifications", &jwt, &csrf, &payload).await {
+            match post_json::<NotificationCreateResponse, _>(
+                &base,
+                "/surreal/notifications",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(resp) => status.set(format!("已创建通知 {}", resp.notification.subject)),
                 Err(err) => status.set(format!("发送失败：{err}")),
             }
@@ -438,9 +551,13 @@ fn App() -> Element {
         }
         spawn(async move {
             status.set("加载附件中...".into());
-            match get_json::<AttachmentListResponse>(&base, "/surreal/attachments", &jwt, &csrf).await {
+            match get_json::<AttachmentListResponse>(&base, "/surreal/attachments", &jwt, &csrf)
+                .await
+            {
                 Ok(resp) => {
-                    if let Some(url) = resp.base_url { base_url_sig.set(url); }
+                    if let Some(url) = resp.base_url {
+                        base_url_sig.set(url);
+                    }
                     list.set(resp.attachments);
                     status.set("附件加载完成".into());
                 }
@@ -469,9 +586,19 @@ fn App() -> Element {
                 board_id: None,
                 topic_id: None,
             };
-            match post_json::<AttachmentCreateResponse, _>(&base, "/surreal/attachments", &jwt, &csrf, &payload).await {
+            match post_json::<AttachmentCreateResponse, _>(
+                &base,
+                "/surreal/attachments",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(resp) => {
-                    if let Some(url) = resp.base_url { base_url_sig.set(url); }
+                    if let Some(url) = resp.base_url {
+                        base_url_sig.set(url);
+                    }
                     let mut current = list.read().clone();
                     current.insert(0, resp.attachment);
                     list.set(current);
@@ -526,7 +653,11 @@ fn App() -> Element {
                 let _ = form.append_with_str("topic_id", &topic_id);
             }
             status.set("上传附件中...".into());
-            let url = format!("{}/{}", base.trim_end_matches('/'), "surreal/attachments/upload");
+            let url = format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                "surreal/attachments/upload"
+            );
             let resp = Request::post(&url)
                 .header("Authorization", &format!("Bearer {}", jwt))
                 .header("X-CSRF-TOKEN", &csrf)
@@ -555,7 +686,9 @@ fn App() -> Element {
             }
             match serde_json::from_str::<AttachmentUploadResponse>(&text) {
                 Ok(resp) => {
-                    if let Some(url) = resp.base_url { base_url_sig.set(url); }
+                    if let Some(url) = resp.base_url {
+                        base_url_sig.set(url);
+                    }
                     let mut current = list.read().clone();
                     current.insert(0, resp.attachment);
                     list.set(current);
@@ -574,7 +707,10 @@ fn App() -> Element {
         let mut status = status.clone();
         let mut list = personal_messages.clone();
         let folder = pm_folder.read().clone();
-        if jwt.trim().is_empty() { status.set("请先登录再查看私信".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录再查看私信".into());
+            return;
+        }
         spawn(async move {
             status.set("加载私信中...".into());
             let path = format!("/surreal/personal_messages?folder={}", folder);
@@ -594,10 +730,20 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut list = personal_messages.clone();
-        if jwt.trim().is_empty() || ids.is_empty() { return; }
+        if jwt.trim().is_empty() || ids.is_empty() {
+            return;
+        }
         spawn(async move {
             let payload = PersonalMessageIdsPayload { ids: ids.clone() };
-            match post_json::<PersonalMessageIdsResponse, _>(&base, "/surreal/personal_messages/read", &jwt, &csrf, &payload).await {
+            match post_json::<PersonalMessageIdsResponse, _>(
+                &base,
+                "/surreal/personal_messages/read",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(_) => {
                     let mut current = list.read().clone();
                     for pm in current.iter_mut() {
@@ -619,12 +765,27 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut list = personal_messages.clone();
-        if jwt.trim().is_empty() || ids.is_empty() { return; }
+        if jwt.trim().is_empty() || ids.is_empty() {
+            return;
+        }
         spawn(async move {
             let payload = PersonalMessageIdsPayload { ids: ids.clone() };
-            match post_json::<PersonalMessageIdsResponse, _>(&base, "/surreal/personal_messages/delete", &jwt, &csrf, &payload).await {
+            match post_json::<PersonalMessageIdsResponse, _>(
+                &base,
+                "/surreal/personal_messages/delete",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(_) => {
-                    let filtered: Vec<_> = list.read().iter().cloned().filter(|pm| !ids.contains(&pm.id)).collect();
+                    let filtered: Vec<_> = list
+                        .read()
+                        .iter()
+                        .cloned()
+                        .filter(|pm| !ids.contains(&pm.id))
+                        .collect();
                     list.set(filtered);
                     status.set("已删除所选私信".into());
                 }
@@ -641,13 +802,35 @@ fn App() -> Element {
         let to_raw = pm_to.read().clone();
         let subj = pm_subject.read().clone();
         let body = pm_body.read().clone();
-        if jwt.trim().is_empty() { status.set("请先登录".into()); return; }
-        if to_raw.trim().is_empty() || body.trim().is_empty() { status.set("请填写收件人和内容".into()); return; }
-        let recipients: Vec<String> = to_raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        if jwt.trim().is_empty() {
+            status.set("请先登录".into());
+            return;
+        }
+        if to_raw.trim().is_empty() || body.trim().is_empty() {
+            status.set("请填写收件人和内容".into());
+            return;
+        }
+        let recipients: Vec<String> = to_raw
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         spawn(async move {
             status.set("发送私信中...".into());
-            let payload = PersonalMessageSendPayload { to: recipients, subject: subj, body };
-            match post_json::<PersonalMessageSendResponse, _>(&base, "/surreal/personal_messages/send", &jwt, &csrf, &payload).await {
+            let payload = PersonalMessageSendPayload {
+                to: recipients,
+                subject: subj,
+                body,
+            };
+            match post_json::<PersonalMessageSendResponse, _>(
+                &base,
+                "/surreal/personal_messages/send",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(_) => status.set("私信已发送".into()),
                 Err(err) => status.set(format!("发送失败：{err}")),
             }
@@ -660,7 +843,10 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut access = board_access.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         spawn(async move {
             status.set("加载版块访问控制...".into());
             match get_json::<BoardAccessResponse>(&base, "/admin/board_access", &jwt, &csrf).await {
@@ -681,19 +867,42 @@ fn App() -> Element {
         let mut access = board_access.clone();
         let board_id = access_board_id.read().trim().to_string();
         let groups_raw = access_groups.read().clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
-        if board_id.is_empty() { status.set("请输入有效的版块 ID".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
+        if board_id.is_empty() {
+            status.set("请输入有效的版块 ID".into());
+            return;
+        }
         let mut groups = Vec::new();
         if !groups_raw.trim().is_empty() {
-            for part in groups_raw.split(',') { if let Ok(id) = part.trim().parse::<i64>() { groups.push(id); } }
+            for part in groups_raw.split(',') {
+                if let Ok(id) = part.trim().parse::<i64>() {
+                    groups.push(id);
+                }
+            }
         }
         spawn(async move {
             status.set("更新版块访问控制...".into());
-            let payload = BoardAccessPayload { board_id: board_id.clone(), allowed_groups: groups.clone() };
-            match post_json::<UpdateBoardAccessResponse, _>(&base, "/admin/board_access", &jwt, &csrf, &payload).await {
+            let payload = BoardAccessPayload {
+                board_id: board_id.clone(),
+                allowed_groups: groups.clone(),
+            };
+            match post_json::<UpdateBoardAccessResponse, _>(
+                &base,
+                "/admin/board_access",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(resp) => {
                     let mut current = access.read().clone();
-                    if let Some(entry) = current.iter_mut().find(|e| e.id == resp.board_id) { entry.allowed_groups = resp.allowed_groups.clone(); }
+                    if let Some(entry) = current.iter_mut().find(|e| e.id == resp.board_id) {
+                        entry.allowed_groups = resp.allowed_groups.clone();
+                    }
                     access.set(current);
                     status.set("已更新".into());
                 }
@@ -708,11 +917,24 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut perms = board_permissions.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         spawn(async move {
             status.set("加载版块权限中...".into());
-            match get_json::<BoardPermissionResponse>(&base, "/admin/board_permissions", &jwt, &csrf).await {
-                Ok(resp) => { perms.set(resp.entries); status.set("版块权限已加载".into()); }
+            match get_json::<BoardPermissionResponse>(
+                &base,
+                "/admin/board_permissions",
+                &jwt,
+                &csrf,
+            )
+            .await
+            {
+                Ok(resp) => {
+                    perms.set(resp.entries);
+                    status.set("版块权限已加载".into());
+                }
                 Err(err) => status.set(format!("加载失败：{err}")),
             }
         });
@@ -726,18 +948,51 @@ fn App() -> Element {
         let mut perms = board_permissions.clone();
         let board_id = perm_board_id.read().trim().to_string();
         let group_id = perm_group_id.read().trim().parse::<i64>().unwrap_or(0);
-        let allow: Vec<String> = perm_allow.read().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-        let deny: Vec<String> = perm_deny.read().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
-        if board_id.is_empty() || group_id == 0 { status.set("请输入有效的 board_id 与 group_id".into()); return; }
+        let allow: Vec<String> = perm_allow
+            .read()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let deny: Vec<String> = perm_deny
+            .read()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
+        if board_id.is_empty() || group_id == 0 {
+            status.set("请输入有效的 board_id 与 group_id".into());
+            return;
+        }
         spawn(async move {
             status.set("更新版块权限...".into());
-            let payload = BoardPermissionPayload { board_id: board_id.clone(), group_id, allow: allow.clone(), deny: deny.clone() };
-            match post_json::<UpdateBoardPermissionResponse, _>(&base, "/admin/board_permissions", &jwt, &csrf, &payload).await {
+            let payload = BoardPermissionPayload {
+                board_id: board_id.clone(),
+                group_id,
+                allow: allow.clone(),
+                deny: deny.clone(),
+            };
+            match post_json::<UpdateBoardPermissionResponse, _>(
+                &base,
+                "/admin/board_permissions",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
                 Ok(resp) => {
                     let mut current = perms.read().clone();
-                    if let Some(entry) = current.iter_mut().find(|e| e.board_id == resp.board_id && e.group_id == resp.group_id) {
-                        entry.allow = resp.allow.clone(); entry.deny = resp.deny.clone();
+                    if let Some(entry) = current
+                        .iter_mut()
+                        .find(|e| e.board_id == resp.board_id && e.group_id == resp.group_id)
+                    {
+                        entry.allow = resp.allow.clone();
+                        entry.deny = resp.deny.clone();
                     }
                     perms.set(current);
                     status.set("版块权限已更新".into());
@@ -747,31 +1002,48 @@ fn App() -> Element {
         });
     };
 
-        let apply_ban = move || {
-            let base = api_base.read().clone();
-            let jwt = token.read().clone();
-            let csrf = csrf_token.read().clone();
-            let mut status = status.clone();
-            let bans_sig = bans.clone();
-            let member_id = ban_member_id.read().trim().parse::<i64>().unwrap_or(0);
-            let hours = ban_hours.read().trim().parse::<i64>().unwrap_or(0);
-            let reason = ban_reason.read().clone();
-            if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
-            if member_id == 0 || hours <= 0 { status.set("请输入有效的 member_id 与时长".into()); return; }
-            spawn(async move {
-                status.set("封禁中...".into());
-                let payload = BanPayload {
-                    member_id: Some(member_id),
-                    ban_id: None,
-                    reason: Some(reason),
-                    hours: Some(hours),
-                };
-                match post_json::<BanApplyResponse, _>(&base, "/admin/bans/apply", &jwt, &csrf, &payload).await {
-                    Ok(_) => { status.set("已封禁".into()); load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await; }
-                    Err(err) => status.set(format!("封禁失败：{err}")),
+    let apply_ban = move || {
+        let base = api_base.read().clone();
+        let jwt = token.read().clone();
+        let csrf = csrf_token.read().clone();
+        let mut status = status.clone();
+        let bans_sig = bans.clone();
+        let member_id = ban_member_id.read().trim().parse::<i64>().unwrap_or(0);
+        let hours = ban_hours.read().trim().parse::<i64>().unwrap_or(0);
+        let reason = ban_reason.read().clone();
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
+        if member_id == 0 || hours <= 0 {
+            status.set("请输入有效的 member_id 与时长".into());
+            return;
+        }
+        spawn(async move {
+            status.set("封禁中...".into());
+            let payload = BanPayload {
+                member_id: Some(member_id),
+                ban_id: None,
+                reason: Some(reason),
+                hours: Some(hours),
+            };
+            match post_json::<BanApplyResponse, _>(
+                &base,
+                "/admin/bans/apply",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
+                Ok(_) => {
+                    status.set("已封禁".into());
+                    load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await;
                 }
-            });
-        };
+                Err(err) => status.set(format!("封禁失败：{err}")),
+            }
+        });
+    };
 
     let revoke_ban = Rc::new(move |ban_id: i64| {
         let base = api_base.read().clone();
@@ -779,7 +1051,10 @@ fn App() -> Element {
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let bans_sig = bans.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         status.set("解除封禁中...".into());
         spawn(async move {
             let payload = BanPayload {
@@ -788,18 +1063,38 @@ fn App() -> Element {
                 reason: None,
                 hours: None,
             };
-            match post_json::<BanRevokeResponse, _>(&base, "/admin/bans/revoke", &jwt, &csrf, &payload).await {
-                Ok(_) => { status.set("已解除封禁".into()); load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await; }
+            match post_json::<BanRevokeResponse, _>(
+                &base,
+                "/admin/bans/revoke",
+                &jwt,
+                &csrf,
+                &payload,
+            )
+            .await
+            {
+                Ok(_) => {
+                    status.set("已解除封禁".into());
+                    load_bans_inner(base, jwt, csrf, bans_sig.clone(), status.clone()).await;
+                }
                 Err(err) => status.set(format!("解除失败：{err}")),
             }
         });
     });
 
     // helper to reload bans
-    fn load_bans_inner(base: String, jwt: String, csrf: String, mut bans_sig: Signal<Vec<BanRuleView>>, mut status: Signal<String>) -> impl std::future::Future<Output=()> {
+    fn load_bans_inner(
+        base: String,
+        jwt: String,
+        csrf: String,
+        mut bans_sig: Signal<Vec<BanRuleView>>,
+        mut status: Signal<String>,
+    ) -> impl std::future::Future<Output = ()> {
         async move {
             match get_json::<BanListResponse>(&base, "/admin/bans", &jwt, &csrf).await {
-                Ok(resp) => { bans_sig.set(resp.bans); status.set("封禁列表已刷新".into()); }
+                Ok(resp) => {
+                    bans_sig.set(resp.bans);
+                    status.set("封禁列表已刷新".into());
+                }
                 Err(err) => status.set(format!("刷新封禁失败：{err}")),
             }
         }
@@ -820,7 +1115,10 @@ fn App() -> Element {
         let q = admin_user_query.read().clone();
         let mut status = status.clone();
         let mut admin_users = admin_users.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         spawn(async move {
             let mut path = "/admin/users?limit=200".to_string();
             if !q.trim().is_empty() {
@@ -828,7 +1126,10 @@ fn App() -> Element {
                 path.push_str(&urlencoding::encode(q.trim()));
             }
             match get_json::<AdminUsersResponse>(&base, &path, &jwt, "").await {
-                Ok(resp) => { admin_users.set(resp.members); status.set("用户列表已刷新".into()); }
+                Ok(resp) => {
+                    admin_users.set(resp.members);
+                    status.set("用户列表已刷新".into());
+                }
                 Err(err) => status.set(format!("加载用户失败：{err}")),
             }
         });
@@ -839,26 +1140,38 @@ fn App() -> Element {
         let jwt = token.read().clone();
         let mut status = status.clone();
         let mut admin_accounts = admin_accounts.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         spawn(async move {
             match get_json::<AdminAccountsResponse>(&base, "/admin/admins", &jwt, "").await {
-                Ok(resp) => { admin_accounts.set(resp.admins); status.set("管理员列表已刷新".into()); }
+                Ok(resp) => {
+                    admin_accounts.set(resp.admins);
+                    status.set("管理员列表已刷新".into());
+                }
                 Err(err) => status.set(format!("加载管理员失败：{err}")),
             }
         });
     };
 
-    let load_admin_groups = move || {
+    let _load_admin_groups = move || {
         let base = api_base.read().clone();
         let jwt = token.read().clone();
         let csrf = csrf_token.read().clone();
         let mut status = status.clone();
         let mut groups = admin_groups.clone();
-        if jwt.trim().is_empty() { status.set("请先登录/粘贴管理员 JWT".into()); return; }
+        if jwt.trim().is_empty() {
+            status.set("请先登录/粘贴管理员 JWT".into());
+            return;
+        }
         spawn(async move {
             status.set("加载组列表中...".into());
             match get_json::<AdminGroupsResponse>(&base, "/admin/groups", &jwt, &csrf).await {
-                Ok(resp) => { groups.set(resp.groups); status.set("组列表已刷新".into()); }
+                Ok(resp) => {
+                    groups.set(resp.groups);
+                    status.set("组列表已刷新".into());
+                }
                 Err(err) => status.set(format!("加载组列表失败：{err}")),
             }
         });
@@ -868,21 +1181,40 @@ fn App() -> Element {
     let is_register = *is_register_page.read();
     let is_login = *is_login_page.read();
     let is_logged_in = !token.read().trim().is_empty();
-    let blog_base = "http://127.0.0.1:3002".to_string();
-    let docs_base = "http://127.0.0.1:3003".to_string();
-    let jwt_for_links = token.read().trim().to_string();
+    let blog_base = "http://forum.local/blog/".to_string();
+    let docs_base = "http://forum.local/docs/".to_string();
+    let mut jwt_for_links = token.read().trim().to_string();
+    if jwt_for_links.is_empty() {
+        if let Some(saved) = load_token_from_storage() {
+            jwt_for_links = saved.trim().to_string();
+        }
+    }
     let blog_link = if jwt_for_links.is_empty() {
         blog_base.clone()
     } else {
-        format!("{}/sso?token={}", blog_base, urlencoding::encode(&jwt_for_links))
+        format!(
+            "{}sso?token={}&next={}",
+            blog_base,
+            urlencoding::encode(&jwt_for_links),
+            urlencoding::encode(&blog_base)
+        )
     };
     let docs_link = if jwt_for_links.is_empty() {
         docs_base.clone()
     } else {
-        format!("{}/sso?token={}", docs_base, urlencoding::encode(&jwt_for_links))
+        format!(
+            "{}sso?token={}&next={}",
+            docs_base,
+            urlencoding::encode(&jwt_for_links),
+            urlencoding::encode(&docs_base)
+        )
     };
     let display_name = current_user.read().trim().to_string();
-    let display_name = if display_name.is_empty() { "Member".to_string() } else { display_name };
+    let display_name = if display_name.is_empty() {
+        "Member".to_string()
+    } else {
+        display_name
+    };
     let welcome_text = if is_logged_in {
         format!("Welcome, {}.", display_name)
     } else {
@@ -907,7 +1239,7 @@ fn App() -> Element {
 
     rsx! {
         style { {STYLE} }
-        div { class: "app-shell",
+        div { class: if *show_topic_detail.read() { "app-shell app-shell--detail" } else { "app-shell" },
             nav { class: "top-nav",
                 div { class: "top-strip",
                     div { class: "brand",
@@ -1069,11 +1401,146 @@ fn App() -> Element {
                     }
                 }
 
-                section { class: "forum-layout",
-                    div { class: "panel forum-main",
-                        div { class: "forum-category",
-                            div { class: "forum-category__title", "Bitcoin" }
-                            div { class: "forum-category__meta", "社区讨论与技术动态" }
+                {if *show_topic_detail.read() { rsx! {
+                    section { class: "post-detail",
+                        button { class: "ghost-btn", onclick: move |_| show_topic_detail.set(false), "← 返回列表" }
+                        div { class: "board-header",
+                            h2 { "{selected_board.read()}" }
+                            div { class: "topic-chips",
+                                { topics.read().iter().cloned().map(|topic| {
+                                    let topic_id = topic.id.clone().unwrap_or_default();
+                                    let is_active = selected_topic.read().clone() == topic_id;
+                                    rsx! {
+                                        button {
+                                            class: if is_active { "topic-chip active" } else { "topic-chip" },
+                                            onclick: move |_| {
+                                                selected_topic.set(topic_id.clone());
+                                                load_posts();
+                                            },
+                                            "{topic.subject}"
+                                        }
+                                    }
+                                })}
+                            }
+                        }
+                        div { class: "detail-tools",
+                            div { class: "detail-panel",
+                                h4 { "版块操作" }
+                                label { "版块 ID" }
+                                input { value: "{selected_board.read()}", oninput: move |evt| selected_board.set(evt.value()) }
+                                div { class: "actions",
+                                    button { onclick: move |_| load_boards(), "刷新版块" }
+                                    button { onclick: move |_| load_topics(), "刷新主题" }
+                                    button { onclick: move |_| load_posts(), "刷新帖子" }
+                                }
+                            }
+                            div { class: "detail-panel",
+                                h4 { "新主题" }
+                                label { "主题标题" }
+                                input { value: "{new_topic_subject.read()}", oninput: move |evt| new_topic_subject.set(evt.value()), placeholder: "新主题标题" }
+                                label { "主题内容" }
+                                textarea { value: "{new_topic_body.read()}", oninput: move |evt| new_topic_body.set(evt.value()), rows: "3", placeholder: "新主题内容" }
+                                div { class: "actions",
+                                    button { onclick: move |_| {
+                                        let board_id = selected_board.read().clone();
+                                        if board_id.is_empty() { status.set("请选择版块".into()); return; }
+                                        let new_subject = new_topic_subject.read().clone();
+                                        let new_body = new_topic_body.read().clone();
+                                        if new_subject.trim().is_empty() || new_body.trim().is_empty() { status.set("请输入主题标题和内容".into()); return; }
+                                        let base = api_base.read().clone();
+                                        let jwt = token.read().clone();
+                                        let csrf = csrf_token.read().clone();
+                                        let mut topics = topics.clone();
+                                        let mut posts = posts.clone();
+                                        let mut status = status.clone();
+                                        spawn(async move {
+                                            status.set("创建主题中...".into());
+                                            let payload = CreateTopicPayload { board_id: board_id.clone(), subject: new_subject.clone(), body: new_body.clone() };
+                                            match post_json::<TopicCreateResponse, _>(&base, "/surreal/topics", &jwt, &csrf, &payload).await {
+                                                Ok(resp) => { topics.set({ let mut next = topics.read().clone(); next.insert(0, resp.topic.clone()); next }); posts.set(vec![resp.first_post]); status.set("主题已创建".into()); }
+                                                Err(err) => status.set(format!("创建失败：{err}")),
+                                            }
+                                        });
+                                    }, "创建主题" }
+                                }
+                            }
+                            div { class: "detail-panel",
+                                h4 { "新回帖" }
+                                label { "主题 ID" }
+                                input { value: "{selected_topic.read()}", oninput: move |evt| selected_topic.set(evt.value()) }
+                                label { "回帖标题（可选）" }
+                                input { value: "{new_post_subject.read()}", oninput: move |evt| new_post_subject.set(evt.value()), placeholder: "标题" }
+                                label { "回帖内容" }
+                                textarea { value: "{new_post_body.read()}", oninput: move |evt| new_post_body.set(evt.value()), rows: "3", placeholder: "内容" }
+                                div { class: "actions",
+                                    button { onclick: move |_| {
+                                        let board_id = selected_board.read().clone();
+                                        let topic_id = selected_topic.read().clone();
+                                        let subject = new_post_subject.read().clone();
+                                        let body = new_post_body.read().clone();
+                                        let base = api_base.read().clone();
+                                        let jwt = token.read().clone();
+                                        let csrf = csrf_token.read().clone();
+                                        let mut status = status.clone();
+                                        let mut posts = posts.clone();
+                                        if board_id.is_empty() || topic_id.is_empty() { status.set("请先选择版块和主题".into()); return; }
+                                        if body.trim().is_empty() { status.set("回复内容不能为空".into()); return; }
+                                        spawn(async move {
+                                            status.set("发送帖子中...".into());
+                                            let payload = CreatePostPayload { topic_id: topic_id.clone(), board_id: board_id.clone(), subject: if subject.trim().is_empty() { None } else { Some(subject.clone()) }, body: body.clone() };
+                                            match post_json::<PostResponse, _>(&base, "/surreal/topic/posts", &jwt, &csrf, &payload).await {
+                                                Ok(resp) => { posts.set({ let mut next = posts.read().clone(); next.push(resp.post); next }); status.set("帖子已发送".into()); }
+                                                Err(err) => status.set(format!("发送失败：{err}")),
+                                            }
+                                        });
+                                    }, "发送" }
+                                }
+                            }
+                        }
+                        {posts.read().first().map(|main| {
+                            let title = if main.subject.trim().is_empty() {
+                                "Untitled".to_string()
+                            } else {
+                                main.subject.clone()
+                            };
+                            rsx! {
+                                article { class: "post-card",
+                                    div { class: "post-header",
+                                        span { class: "pill", "{selected_topic.read()}" }
+                                        span { class: "meta", "m/{selected_board.read()}" }
+                                    }
+                                    h2 { "{title}" }
+                                    div { class: "meta", "作者: {main.author} | 时间: {main.created_at.clone().unwrap_or_default()}" }
+                                    p { "{main.body}" }
+                                    div { class: "post-actions",
+                                        button { class: "ghost-btn", "Share" }
+                                        button { class: "ghost-btn", "Save" }
+                                    }
+                                }
+                            }
+                        }).unwrap_or_else(|| rsx! { p { "暂无帖子" } })}
+                        h3 { class: "comment-title", "Comments" }
+                        ul { class: "comment-list",
+                            { posts.read().iter().skip(1).cloned().map(|post| {
+                                let is_focused = focused_post_id.read().clone() == post.id.clone().unwrap_or_default();
+                                rsx! {
+                                    li { class: if is_focused { "comment-card focused" } else { "comment-card" },
+                                        div { class: "comment-meta",
+                                            span { "{post.author}" }
+                                            span { " · {post.created_at.clone().unwrap_or_default()}" }
+                                        }
+                                        p { "{post.body}" }
+                                    }
+                                }
+                            })}
+                        }
+                    }
+                }} else { rsx! {
+                    section { class: "forum-layout",
+                        div { class: "panel forum-main",
+                            div { class: "forum-category",
+                                div { class: "forum-category__title", "Bitcoin" }
+                                div { class: "forum-category__meta", "社区讨论与技术动态" }
                         }
                         div { class: "forum-table",
                             div { class: "forum-row forum-row--head",
@@ -1088,7 +1555,14 @@ fn App() -> Element {
                                 rsx! {
                                     div {
                                         class: if selected_id == board_id { "forum-row selected" } else { "forum-row" },
-                                        onclick: move |_| { selected_board.set(board_id.clone()); selected_topic.set("".into()); topics.set(Vec::new()); posts.set(Vec::new()); load_topics(); },
+                                        onclick: move |_| {
+                                            selected_board.set(board_id.clone());
+                                            selected_topic.set("".into());
+                                            topics.set(Vec::new());
+                                            posts.set(Vec::new());
+                                            show_topic_detail.set(true);
+                                            load_topics();
+                                        },
                                         div { class: "forum-cell forum-cell--board",
                                             div { class: "forum-title", "{b.name}" }
                                             div { class: "forum-desc", "{desc}" }
@@ -1106,122 +1580,8 @@ fn App() -> Element {
                             })}
                         }
                     }
-                    aside { class: "panel forum-side",
-                        h3 { "选中版块" }
-                        label { "版块 ID" }
-                        input { value: "{selected_board.read()}", oninput: move |evt| selected_board.set(evt.value()) }
-                        div { class: "actions",
-                            button { onclick: move |_| load_boards(), "刷新版块" }
-                            button { onclick: move |_| load_topics(), "刷新主题" }
-                        }
-
-                        h4 { "新主题" }
-                        label { "主题标题" }
-                        input { value: "{new_topic_subject.read()}", oninput: move |evt| new_topic_subject.set(evt.value()), placeholder: "新主题标题" }
-                        label { "主题内容" }
-                        textarea { value: "{new_topic_body.read()}", oninput: move |evt| new_topic_body.set(evt.value()), rows: "3", placeholder: "新主题内容" }
-                        div { class: "actions",
-                            button { onclick: move |_| {
-                                let board_id = selected_board.read().clone();
-                                if board_id.is_empty() { status.set("请选择版块".into()); return; }
-                                let new_subject = new_topic_subject.read().clone();
-                                let new_body = new_topic_body.read().clone();
-                                if new_subject.trim().is_empty() || new_body.trim().is_empty() { status.set("请输入主题标题和内容".into()); return; }
-                                let base = api_base.read().clone();
-                                let jwt = token.read().clone();
-                                let csrf = csrf_token.read().clone();
-                                let mut topics = topics.clone();
-                                let mut posts = posts.clone();
-                                let mut status = status.clone();
-                                spawn(async move {
-                                    status.set("创建主题中...".into());
-                                    let payload = CreateTopicPayload { board_id: board_id.clone(), subject: new_subject.clone(), body: new_body.clone() };
-                                    match post_json::<TopicCreateResponse, _>(&base, "/surreal/topics", &jwt, &csrf, &payload).await {
-                                        Ok(resp) => { topics.set({ let mut next = topics.read().clone(); next.insert(0, resp.topic.clone()); next }); posts.set(vec![resp.first_post]); status.set("主题已创建".into()); }
-                                        Err(err) => status.set(format!("创建失败：{err}")),
-                                    }
-                                });
-                            }, "创建主题" }
-                        }
-
-                        h4 { "主题" }
-                        ul { class: "list topic-list",
-                            { topics.read().iter().cloned().map(|topic| {
-                                let selected_topic_id = selected_topic.read().clone();
-                                rsx! {
-                                    li {
-                                        class: if selected_topic_id == topic.id.clone().unwrap_or_default() { "item selected" } else { "item" },
-                                        onclick: move |_| { selected_topic.set(topic.id.clone().unwrap_or_default()); load_posts(); },
-                                        strong { "{topic.subject}" }
-                                        div { class: "meta", "作者: {topic.author} | 时间: {topic.created_at.clone().unwrap_or_default()}" }
-                                    }
-                                }
-                            })}
-                        }
-
-                        h4 { "新回帖" }
-                        label { "主题 ID" }
-                        input { value: "{selected_topic.read()}", oninput: move |evt| selected_topic.set(evt.value()) }
-                        label { "回帖标题（可选）" }
-                        input { value: "{new_post_subject.read()}", oninput: move |evt| new_post_subject.set(evt.value()), placeholder: "标题" }
-                        label { "回帖内容" }
-                        textarea { value: "{new_post_body.read()}", oninput: move |evt| new_post_body.set(evt.value()), rows: "3", placeholder: "内容" }
-                        div { class: "actions",
-                            button { onclick: move |_| {
-                                let board_id = selected_board.read().clone();
-                                let topic_id = selected_topic.read().clone();
-                                let subject = new_post_subject.read().clone();
-                                let body = new_post_body.read().clone();
-                                let base = api_base.read().clone();
-                                let jwt = token.read().clone();
-                                let csrf = csrf_token.read().clone();
-                                let mut status = status.clone();
-                                let mut posts = posts.clone();
-                                if board_id.is_empty() || topic_id.is_empty() { status.set("请先选择版块和主题".into()); return; }
-                                if body.trim().is_empty() { status.set("回复内容不能为空".into()); return; }
-                                spawn(async move {
-                                    status.set("发送帖子中...".into());
-                                    let payload = CreatePostPayload { topic_id: topic_id.clone(), board_id: board_id.clone(), subject: if subject.trim().is_empty() { None } else { Some(subject.clone()) }, body: body.clone() };
-                                    match post_json::<PostResponse, _>(&base, "/surreal/topic/posts", &jwt, &csrf, &payload).await {
-                                        Ok(resp) => { posts.set({ let mut next = posts.read().clone(); next.push(resp.post); next }); status.set("帖子已发送".into()); }
-                                        Err(err) => status.set(format!("发送失败：{err}")),
-                                    }
-                                });
-                            }, "发送" }
-                        }
-
-                        ul { class: "list post-list",
-                            { posts.read().iter().cloned().map(|post| {
-                                let mut new_post_body = new_post_body.clone();
-                                let author = post.author.clone();
-                                let body = post.body.clone();
-                                rsx! {
-                                    li { class: "item",
-                                        strong { "{post.subject}" }
-                                        div { class: "meta", "作者: {author} | 时间: {post.created_at.clone().unwrap_or_default()}" }
-                                        p { "{body}" }
-                                        div { class: "actions",
-                                            button {
-                                                class: "ghost-btn",
-                                                onclick: move |_| {
-                                                    let current = new_post_body.read().clone();
-                                                    let quote = format!("[quote author=\"{}\"]\n{}\n[/quote]\n", author, body);
-                                                    let next = if current.trim().is_empty() {
-                                                        quote
-                                                    } else {
-                                                        format!("{}\n{}", current.trim_end(), quote)
-                                                    };
-                                                    new_post_body.set(next);
-                                                },
-                                                "引用"
-                                            }
-                                        }
-                                    }
-                                }
-                            })}
-                        }
                     }
-                }
+                }}}
 
                 section { class: "panel",
                     div { class: "panel__header",
@@ -1628,86 +1988,289 @@ fn App() -> Element {
 
 // ---------- Styles ----------
 const STYLE: &str = r#"
-:root { --bg: #0b0f18; --panel: #0f1624; --muted: #93a0ba; --text: #eaf3ff; --accent: #00f5ff; --accent2: #2a7bff; --border: rgba(120,170,255,0.16); --radius: 14px; --neon: #00f5ff; --neon-soft: rgba(0,245,255,0.25); --neon-deep: rgba(0,245,255,0.55); --magenta: #ff3cff; }
-* { box-sizing: border-box; }
-html { background: #0b0f18; }
-body { margin: 0; min-height: 100vh; background:
-    radial-gradient(circle at 10% 10%, rgba(0,245,255,0.18), transparent 35%),
-    radial-gradient(circle at 85% 15%, rgba(42,123,255,0.18), transparent 35%),
-    radial-gradient(circle at 18% 85%, rgba(255,60,255,0.08), transparent 45%),
-    linear-gradient(180deg, rgba(8,12,22,0.96), rgba(10,14,24,0.98)),
-    #0b0f18;
-    background-attachment: fixed;
-    color: var(--text);
-    font-family: "Space Grotesk", "Orbitron", "Inter", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+:root {
+    --bg: #f1f1f1;
+    --paper: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6d6d6d;
+    --accent: #e14b4b;
+    --accent-2: #2c2c2c;
+    --border: #e5e5e5;
+    --shadow: 0 16px 32px rgba(0, 0, 0, 0.08);
+    --radius: 12px;
+    --radius-soft: 8px;
 }
-body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(0,245,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,245,255,0.06) 1px, transparent 1px); background-size: 120px 120px, 120px 120px; mask-image: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.8), transparent 65%); opacity: 0.35; }
+* { box-sizing: border-box; }
+html, body { padding: 0; margin: 0; min-height: 100%; }
+body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Plus Jakarta Sans", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+}
+h1, h2, h3, h4 { font-family: "Space Grotesk", "Noto Sans SC", sans-serif; }
 a { color: inherit; text-decoration: none; }
-.app-shell { max-width: 1200px; margin: 0 auto; padding: 18px 18px 36px; display: flex; flex-direction: column; gap: 14px; }
-.top-nav { position: sticky; top: 0; z-index: 10; display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid rgba(0,245,255,0.25); background: rgba(9,14,24,0.9); backdrop-filter: blur(10px); border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.45); }
-.top-strip { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 10px; border-radius: 10px; background: linear-gradient(180deg, rgba(0,245,255,0.12), rgba(10,16,26,0.9)); border: 1px solid rgba(0,245,255,0.2); }
-.top-meta { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); text-align: right; }
-.top-date { color: #d7f8ff; font-weight: 600; }
-.nav-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(8,12,20,0.85); border: 1px solid rgba(0,245,255,0.16); }
-.nav-tab { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0,245,255,0.2); background: rgba(0,245,255,0.08); color: #d7f8ff; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-.nav-tab.active { background: linear-gradient(90deg, rgba(0,245,255,0.35), rgba(42,123,255,0.4)); color: #051018; border-color: rgba(0,245,255,0.6); }
-.nav-tab--ghost { background: transparent; border-style: dashed; color: #8eefff; cursor: pointer; }
-.nav-search { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.nav-search input { width: 160px; padding: 6px 8px; font-size: 12px; }
-.nav-search__btn { padding: 6px 10px; font-size: 12px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; }
-.brand__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px rgba(0,245,255,0.9); }
-.brand__tag { padding: 2px 8px; border-radius: 999px; background: rgba(0,245,255,0.14); color: #b6f9ff; font-size: 12px; border: 1px solid rgba(0,245,255,0.35); }
-.nav-links { display: flex; gap: 8px; align-items: center; }
-.nav-link { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--text); font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-.nav-link.active { background: linear-gradient(120deg, #00f5ff, #2a7bff); color: #0b0e15; box-shadow: 0 10px 28px rgba(0,245,255,0.25); border-color: rgba(0,245,255,0.45); }
-.status-bar { border: 1 dashed var(--border); border-radius: 12px; padding: 10px 12px; color: var(--muted); background: rgba(255,255,255,0.02); }
-.hero { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; padding: 20px; border-radius: 16px; border: 1px solid rgba(0,245,255,0.2); background: radial-gradient(circle at 15% 20%, rgba(0,245,255,0.22), transparent 40%), radial-gradient(circle at 85% 15%, rgba(42,123,255,0.18), transparent 35%), #0b111d; box-shadow: 0 16px 50px rgba(0,0,0,0.6); }
-.hero__copy h1 { margin: 6px 0 8px; font-size: 28px; letter-spacing: 0.3px; }
-.hero__copy p { margin: 0 0 12px; color: var(--muted); }
+
+@keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.app-shell {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 26px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.top-nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 16px 14px;
+    background: var(--accent-2);
+    color: #f4f4f4;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: 0 6px 0 rgba(225, 75, 75, 0.95);
+}
+.top-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    text-transform: lowercase;
+}
+.brand__dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: var(--accent);
+}
+.brand__tag {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.1);
+    color: #f5f5f5;
+    font-size: 11px;
+}
+.top-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #c9c9c9;
+    text-align: right;
+}
+.top-date { font-weight: 600; color: #ffffff; }
+
+.nav-tabs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 6px;
+}
+.nav-tab {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.08);
+    color: #f4f4f4;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    text-transform: capitalize;
+    transition: all 0.2s ease;
+}
+.nav-tab.active {
+    background: #ffffff;
+    color: #1b1b1b;
+    border-color: #ffffff;
+}
+.nav-tab--ghost {
+    background: transparent;
+    border-style: dashed;
+    cursor: pointer;
+}
+.nav-search {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.nav-search input {
+    width: 210px;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    border: none;
+}
+.nav-search__btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 999px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+}
+
+.status-bar {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-soft);
+    padding: 10px 12px;
+    color: var(--muted);
+    background: var(--paper);
+}
+.hero {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 18px;
+    padding: 22px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--paper);
+    box-shadow: var(--shadow);
+    animation: rise 0.5s ease both;
+}
+.hero__copy h1 { margin: 4px 0 10px; font-size: 28px; }
+.hero__copy p { margin: 0 0 16px; color: var(--muted); max-width: 40ch; }
 .hero__actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.hero__panel { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.hero__panel {
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-soft);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
 .stat { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
-.stat strong { color: var(--text); font-size: 15px; }
+.stat strong { color: var(--ink); font-size: 15px; }
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
-.stat-box { background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
-.stat-box strong { font-size: 20px; display: block; color: #fbc27a; }
-.pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(247,147,26,0.15); color: #ffbd71; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; font-size: 12px; }
-.ghost-btn { padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(0,245,255,0.35); background: rgba(0,245,255,0.08); color: #d9fbff; cursor: pointer; box-shadow: inset 0 0 10px rgba(0,245,255,0.08); transition: all 0.2s ease; }
-.ghost-btn:hover { box-shadow: 0 0 18px rgba(0,245,255,0.35); transform: translateY(-1px); }
+.stat-box {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-soft);
+    padding: 10px;
+    text-align: center;
+}
+.stat-box strong { font-size: 20px; display: block; color: var(--accent); }
+.pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #111;
+    color: #fff;
+    font-weight: 600;
+    font-size: 11px;
+}
+.ghost-btn {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--accent-2);
+    background: transparent;
+    color: var(--accent-2);
+    cursor: pointer;
+}
+.ghost-btn:hover { background: rgba(0,0,0,0.05); }
 .ghost-btn, .item { pointer-events: auto; }
-.panel { background: rgba(10,16,26,0.86); border: 1px solid rgba(0,245,255,0.2); border-radius: var(--radius); padding: 16px; box-shadow: 0 12px 36px rgba(0,0,0,0.45); }
-.panel h2, .panel h3, .panel h4 { margin: 0 0 10px; }
+
+.panel {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    animation: rise 0.5s ease both;
+}
+.panel h2, .panel h3, .panel h4 { margin: 0 0 12px; }
 .panel__header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .muted { color: var(--muted); font-size: 13px; }
 .grid { display: grid; gap: 14px; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .grid.two.gap { gap: 16px; }
-.register-panel { background: rgba(9,14,22,0.9); }
 .register-panel h2 { margin-bottom: 8px; }
-.register-note { padding: 8px 10px; border: 1px solid rgba(0,245,255,0.2); background: rgba(0,245,255,0.08); border-radius: 8px; color: var(--muted); font-size: 13px; }
+.register-note {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    background: #fafafa;
+    border-radius: var(--radius-soft);
+    color: var(--muted);
+    font-size: 13px;
+}
 .register-grid { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 12px; margin-top: 14px; }
-.register-labels { display: flex; flex-direction: column; gap: 18px; font-weight: 600; }
+.register-labels { display: flex; flex-direction: column; gap: 18px; font-weight: 600; color: var(--accent-2); }
 .register-fields { display: flex; flex-direction: column; gap: 12px; }
 .register-captcha { display: flex; align-items: center; gap: 10px; }
-.captcha-box { padding: 8px 12px; border: 1px dashed rgba(0,245,255,0.5); border-radius: 6px; font-weight: 700; letter-spacing: 2px; color: #00f5ff; background: rgba(0,245,255,0.1); }
+.captcha-box {
+    padding: 8px 12px;
+    border: 1px dashed #bdbdbd;
+    border-radius: 8px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--accent-2);
+    background: #f9f9f9;
+}
 .register-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
 .login-panel { display: flex; justify-content: center; }
-.login-box { width: min(420px, 100%); border: 1px solid rgba(0,245,255,0.2); border-radius: 10px; padding: 16px; background: rgba(10,16,26,0.86); box-shadow: 0 14px 30px rgba(0,0,0,0.4); }
+.login-box {
+    width: min(420px, 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+}
 .login-box h2 { margin-top: 0; }
-.login-row { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.login-row { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .login-row--inline { flex-direction: row; align-items: center; gap: 8px; }
-.login-links { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }
-.forum-layout { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr); gap: 16px; }
-.forum-category { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 10px; border-radius: 10px; background: linear-gradient(90deg, rgba(0,245,255,0.18), rgba(42,123,255,0.08)); border: 1px solid rgba(0,245,255,0.25); margin-bottom: 12px; }
-.forum-category__title { font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
+.login-links { margin-top: 12px; font-size: 12px; color: var(--muted); text-align: center; }
+
+.forum-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.forum-category {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: var(--radius-soft);
+    background: #f6f6f6;
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+.forum-category__title { font-weight: 700; letter-spacing: 0.6px; }
 .forum-category__meta { color: var(--muted); font-size: 12px; }
-.forum-table { display: flex; flex-direction: column; gap: 6px; }
-.forum-row { display: grid; grid-template-columns: minmax(0, 2.5fr) minmax(140px, 1fr) minmax(200px, 1.2fr); gap: 12px; padding: 12px; border-radius: 10px; border: 1px solid rgba(0,245,255,0.12); background: rgba(9,14,22,0.78); cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
-.forum-row:hover { border-color: rgba(0,245,255,0.45); box-shadow: 0 0 18px rgba(0,245,255,0.15); transform: translateY(-1px); }
-.forum-row.selected { border-color: rgba(0,245,255,0.7); box-shadow: 0 0 20px rgba(0,245,255,0.25); }
-.forum-row--head { cursor: default; text-transform: uppercase; font-size: 12px; letter-spacing: 0.7px; background: rgba(0,245,255,0.12); border-color: rgba(0,245,255,0.35); }
-.forum-row--head:hover { border-color: rgba(0,245,255,0.35); box-shadow: none; transform: none; }
+.forum-table { display: flex; flex-direction: column; gap: 10px; }
+.forum-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2.5fr) minmax(140px, 1fr) minmax(200px, 1.2fr);
+    gap: 12px;
+    padding: 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: #ffffff;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.forum-row:hover { border-color: rgba(225,75,75,0.4); box-shadow: 0 10px 24px rgba(0,0,0,0.08); transform: translateY(-2px); }
+.forum-row.selected { border-color: rgba(225,75,75,0.6); }
+.forum-row--head {
+    cursor: default;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.7px;
+    background: #f5f5f5;
+}
+.forum-row--head:hover { border-color: var(--border); box-shadow: none; transform: none; }
 .forum-cell--board { display: flex; flex-direction: column; gap: 6px; }
 .forum-title { font-weight: 700; }
 .forum-desc { color: var(--muted); font-size: 13px; }
@@ -1715,22 +2278,238 @@ a { color: inherit; text-decoration: none; }
 .forum-last__title { font-weight: 600; }
 .forum-last__meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .forum-side h3 { margin-top: 0; }
-label { display: block; margin-top: 6px; font-weight: 700; color: var(--text); }
-input, textarea { width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--text); }
-input:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+
+label { display: block; margin-top: 6px; font-weight: 600; color: var(--accent-2); }
+input, textarea {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px 12px;
+    border-radius: var(--radius-soft);
+    border: 1px solid var(--border);
+    background: #ffffff;
+    color: var(--ink);
+}
+input:focus, textarea:focus { outline: 2px solid rgba(225,75,75,0.25); border-color: rgba(225,75,75,0.4); }
 textarea { resize: vertical; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-button { padding: 10px 14px; border: 1px solid rgba(0,245,255,0.55); border-radius: 10px; background: linear-gradient(135deg, rgba(0,245,255,0.12), rgba(61,139,253,0.35)); color: #e6feff; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 0.6px; box-shadow: 0 0 14px rgba(0,245,255,0.25), inset 0 0 18px rgba(0,245,255,0.08); transition: all 0.2s ease; }
-button:hover { box-shadow: 0 0 22px rgba(0,245,255,0.45), inset 0 0 20px rgba(0,245,255,0.12); transform: translateY(-1px); }
-.card-ghost { background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 12px; padding: 12px; }
+button {
+    padding: 9px 16px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--accent);
+    color: #ffffff;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.4px;
+    transition: all 0.2s ease;
+}
+button:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(225,75,75,0.2); }
+.card-ghost {
+    background: #ffffff;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+}
 .checkbox { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
 .list { list-style: none; padding: 0; margin: 12px 0 0 0; display: flex; flex-direction: column; gap: 10px; }
-.item { background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 10px 12px; border-radius: 12px; }
-.item.selected { border-color: var(--accent); background: rgba(0,245,255,0.08); }
+.item { background: #ffffff; border: 1px solid var(--border); padding: 12px; border-radius: var(--radius-soft); }
+.item.selected { border-color: rgba(225,75,75,0.5); background: rgba(225,75,75,0.06); }
 .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
-.hero--admin { background: radial-gradient(circle at 18% 20%, rgba(0,245,255,0.24), transparent 38%), radial-gradient(circle at 80% 10%, rgba(255,60,255,0.18), transparent 30%), #0b111f; }
-@media (max-width: 900px) { .hero { grid-template-columns: 1fr; } }
-@media (max-width: 900px) { .forum-layout { grid-template-columns: 1fr; } .forum-row { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .top-nav { flex-direction: column; align-items: flex-start; gap: 10px; } .nav-links { width: 100%; flex-wrap: wrap; } .top-strip { flex-direction: column; align-items: flex-start; } .top-meta { text-align: left; } .nav-search { width: 100%; } .nav-search input { width: 100%; } }
+.post-list { gap: 12px; }
+.post-list .item {
+    position: relative;
+    padding: 14px 16px 14px 54px;
+    border-radius: 10px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.06);
+}
+.post-list .item::before {
+    content: "▲";
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    font-size: 12px;
+    color: var(--accent);
+}
+.post-list .item::after {
+    content: "▼";
+    position: absolute;
+    left: 18px;
+    top: 36px;
+    font-size: 12px;
+    color: #9a9a9a;
+}
+.post-list .item strong {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 6px;
+}
+.post-list .item p {
+    margin: 10px 0 0;
+    color: #333;
+    line-height: 1.5;
+}
+.post-list .actions {
+    margin-top: 10px;
+}
+.post-list .ghost-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 999px;
+}
+.topic-list .item {
+    background: #fafafa;
+}
+.topic-list .item strong {
+    display: block;
+}
+.post-detail {
+    background: #121212;
+    border-radius: var(--radius);
+    padding: 20px;
+    color: #f3f3f3;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    box-shadow: 0 18px 36px rgba(0,0,0,0.2);
+}
+.app-shell--detail > :not(.post-detail) {
+    display: none;
+}
+.app-shell--detail {
+    max-width: 920px;
+}
+.app-shell--detail body,
+body:has(.app-shell--detail) {
+    background: #0b0b0b;
+    color: #f3f3f3;
+}
+.board-header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.board-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #f7f7f7;
+}
+.topic-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.topic-chip {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #2a2a2a;
+    background: #1b1b1b;
+    color: #d6d6d6;
+    font-size: 12px;
+    cursor: pointer;
+}
+.topic-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.post-detail .ghost-btn {
+    align-self: flex-start;
+    background: #1d1d1d;
+    border-color: #2a2a2a;
+    color: #f0f0f0;
+}
+.post-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+.post-card h2 {
+    margin: 8px 0 10px;
+    font-size: 20px;
+}
+.post-card p {
+    margin: 12px 0 0;
+    color: #d7d7d7;
+    line-height: 1.6;
+}
+.post-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #bdbdbd;
+    font-size: 12px;
+}
+.post-actions {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+}
+.comment-title {
+    margin: 0;
+    font-size: 16px;
+}
+.comment-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+}
+.comment-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.comment-card.focused {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(225,75,75,0.2);
+}
+.comment-meta {
+    display: flex;
+    gap: 8px;
+    color: #a9a9a9;
+    font-size: 12px;
+}
+.comment-card p {
+    margin: 8px 0 0;
+    color: #d0d0d0;
+    line-height: 1.5;
+}
+.detail-tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+.detail-panel {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 12px;
+}
+.detail-panel h4 {
+    margin: 0 0 8px;
+}
+.post-detail input,
+.post-detail textarea {
+    background: #141414;
+    border-color: #2a2a2a;
+    color: #f0f0f0;
+}
+.hero--admin { background: var(--paper); }
+
+@media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; }
+    .forum-layout { grid-template-columns: 1fr; }
+    .forum-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .top-nav { border-radius: 0; }
+    .top-strip { flex-direction: column; align-items: flex-start; }
+    .top-meta { text-align: left; }
+    .nav-search { width: 100%; }
+    .nav-search input { width: 100%; }
+}
 "#;

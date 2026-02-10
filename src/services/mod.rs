@@ -901,7 +901,11 @@ pub fn push_to_array<T: Serialize>(bag: &mut DataBag, key: &str, value: T) {
 }
 
 pub fn ensure(condition: bool, error: ForumError) -> ServiceResult<()> {
-    if condition { Ok(()) } else { Err(error) }
+    if condition {
+        Ok(())
+    } else {
+        Err(error)
+    }
 }
 
 #[derive(Default)]
@@ -2260,7 +2264,9 @@ impl ForumService for InMemoryService {
 
     fn set_board_access(&self, board_id: &str, groups: &[i64]) -> ServiceResult<()> {
         let mut state = self.state.lock().unwrap();
-        state.board_access.insert(board_id.to_string(), groups.to_vec());
+        state
+            .board_access
+            .insert(board_id.to_string(), groups.to_vec());
         Ok(())
     }
 

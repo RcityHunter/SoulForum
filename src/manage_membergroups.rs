@@ -1,6 +1,6 @@
 use crate::services::{
-    BoardListOptions, ForumContext, ForumError, ForumService, MembergroupData, MembergroupSettings,
-    ServiceResult, SessionCheckMode, ensure,
+    ensure, BoardListOptions, ForumContext, ForumError, ForumService, MembergroupData,
+    MembergroupSettings, ServiceResult, SessionCheckMode,
 };
 use serde_json::json;
 

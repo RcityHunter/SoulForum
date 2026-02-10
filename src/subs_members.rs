@@ -39,12 +39,10 @@ mod tests {
         .unwrap();
         let cleanup_ctx = ForumContext::default();
         cleanup_after_member_removal(&service, &cleanup_ctx, &[2]).unwrap();
-        assert!(
-            service
-                .personal_message_detail(2, log.message_id.unwrap())
-                .unwrap()
-                .is_none()
-        );
+        assert!(service
+            .personal_message_detail(2, log.message_id.unwrap())
+            .unwrap()
+            .is_none());
     }
 
     #[test]
