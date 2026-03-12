@@ -13,14 +13,15 @@ use crate::services::{
 use crate::surreal::{
     create_board as surreal_create_board, create_post_in_topic as surreal_create_post_in_topic,
     create_topic as surreal_create_topic, get_user_by_name, list_boards as surreal_list_boards,
-    list_posts_for_topic as surreal_list_posts_for_topic, SurrealClient,
+    list_posts_for_topic as surreal_list_posts_for_topic, SurrealClient, connect_from_env,
+    reauth_from_env,
 };
 use chrono::{TimeZone, Utc};
-use serde::Deserialize;
+use surrealdb::types::SurrealValue;
 use serde_json::Value;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, SurrealValue)]
 struct PostRow {
     id: Option<String>,
     topic_id: String,
@@ -112,6 +113,11 @@ impl SurrealService {
         Utc.timestamp_millis_opt(ms)
             .single()
             .unwrap_or_else(Utc::now)
+    }
+
+    fn is_surreal_unauthorized(err: &surrealdb::Error) -> bool {
+        let msg = err.to_string();
+        msg.contains("401 Unauthorized") || msg.contains("status client error (401")
     }
 }
 
@@ -218,7 +224,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct TopicRow {
             board_id: Option<String>,
             subject: Option<String>,
@@ -264,7 +270,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct MsgRow {
             id: Option<String>,
             created_at: Option<String>,
@@ -447,7 +453,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: String,
@@ -501,7 +507,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: String,
@@ -560,7 +566,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             files: Option<i64>,
             total: Option<i64>,
@@ -657,7 +663,7 @@ impl ForumService for SurrealService {
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
 
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             board_id: Option<i64>,
@@ -914,7 +920,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: Option<String>,
@@ -949,7 +955,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: Option<String>,
@@ -1018,7 +1024,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             member_id: Option<i64>,
             is_primary: Option<bool>,
@@ -1079,7 +1085,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             show_group_key: Option<bool>,
         }
@@ -1262,7 +1268,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: Option<String>,
@@ -1306,7 +1312,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: Option<String>,
@@ -1335,7 +1341,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             total: Option<i64>,
         }
@@ -1361,7 +1367,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<String>,
             name: String,
@@ -1408,7 +1414,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             name: Option<String>,
@@ -1453,7 +1459,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<String>,
             name: String,
@@ -1504,20 +1510,33 @@ impl ForumService for SurrealService {
     fn list_board_access(&self) -> Result<Vec<BoardAccessEntry>, ForumError> {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
-        let mut response = rt
-            .block_on(async {
-                self.client
-                    .query(
-                        r#"
-                        SELECT board_id, allowed_groups,
-                            (SELECT name FROM boards WHERE id = board_id)[0].name AS name
-                        FROM board_access;
-                        "#,
-                    )
-                    .await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        let query = r#"
+            SELECT board_id, allowed_groups,
+                (SELECT name FROM boards WHERE id = board_id)[0].name AS name
+            FROM board_access;
+            "#;
+        let mut response = match rt.block_on(async { self.client.query(query).await }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await }) {
+                    tracing::warn!(error = %reauth_err, "list_board_access reauth failed, trying reconnect");
+                }
+                match rt.block_on(async { self.client.query(query).await }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "list_board_access still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async { fresh.query(query).await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             board_id: Option<String>,
             allowed_groups: Option<Vec<i64>>,
@@ -1545,7 +1564,7 @@ impl ForumService for SurrealService {
             self.client
                 .query(
                     r#"
-                    UPSERT type::thing("board_access", $board_id) SET
+                    UPSERT type::record("board_access", $board_id) SET
                         board_id = $board_id,
                         allowed_groups = $groups;
                     "#,
@@ -1582,7 +1601,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             member_id: Option<i64>,
             prefs: Option<std::collections::HashMap<String, i32>>,
@@ -1683,7 +1702,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             permissions: Option<Vec<String>>,
         }
@@ -1728,7 +1747,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             allow: Option<Vec<String>>,
             deny: Option<Vec<String>>,
@@ -1768,18 +1787,20 @@ impl ForumService for SurrealService {
                 self.client
                     .query(
                         r#"
-                        SELECT meta::id(id) as id, reason, expires_at_ms, conditions
+                        SELECT meta::id(id) as id, reason, expires_at_ms, cannot_post, cannot_access, conditions
                         FROM ban_rules;
                         "#,
                     )
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             reason: Option<String>,
             expires_at_ms: Option<i64>,
+            cannot_post: Option<bool>,
+            cannot_access: Option<bool>,
             conditions: Option<serde_json::Value>,
         }
         let rows: Vec<Row> = response.take(0).unwrap_or_default();
@@ -1791,6 +1812,8 @@ impl ForumService for SurrealService {
                 expires_at: r
                     .expires_at_ms
                     .and_then(|ms| Utc.timestamp_millis_opt(ms).single()),
+                cannot_post: r.cannot_post.unwrap_or(false),
+                cannot_access: r.cannot_access.unwrap_or(false),
                 conditions: r
                     .conditions
                     .and_then(|value| serde_json::from_value(value).ok())
@@ -1812,15 +1835,19 @@ impl ForumService for SurrealService {
             self.client
                 .query(
                     r#"
-                    UPSERT type::thing("ban_rules", $id) SET
+                    UPSERT type::record("ban_rules", $id) SET
                         id = $id,
                         reason = $reason,
                         expires_at_ms = $expires,
+                        cannot_post = $cannot_post,
+                        cannot_access = $cannot_access,
                         conditions = $conditions;
                     "#,
                 )
                 .bind(("reason", _rule.reason.clone()))
                 .bind(("expires", _rule.expires_at.map(|dt| dt.timestamp_millis())))
+                .bind(("cannot_post", _rule.cannot_post))
+                .bind(("cannot_access", _rule.cannot_access))
                 .bind(("conditions", conditions))
                 .bind(("id", rule_id))
                 .await
@@ -1857,7 +1884,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             ban_id: Option<i64>,
@@ -1988,7 +2015,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             ignored_id: Option<i64>,
         }
@@ -2053,7 +2080,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             buddy_id: Option<i64>,
         }
@@ -2079,7 +2106,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             receive_from: Option<i32>,
             notify_level: Option<i32>,
@@ -2168,7 +2195,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct CountRow {
             total: Option<usize>,
         }
@@ -2227,7 +2254,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<String>,
             action: Option<String>,
@@ -2272,7 +2299,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             count: Option<usize>,
         }
@@ -2361,7 +2388,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             owner_id: Option<i64>,
@@ -2412,7 +2439,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
             owner_id: Option<i64>,
@@ -2459,7 +2486,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct CountRow {
             total: Option<usize>,
             unread: Option<usize>,
@@ -2499,7 +2526,7 @@ impl ForumService for SurrealService {
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
 
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct LabelRow {
             label_id: Option<i64>,
             name: String,
@@ -2524,22 +2551,63 @@ impl ForumService for SurrealService {
             .collect();
 
         // Compute counts from messages.
-        let mut msg_resp = rt
-            .block_on(async {
-                self.client
-                    .query(
-                        r#"
-                        SELECT labels, is_read
-                        FROM personal_messages
-                        WHERE owner_id = $owner_id;
-                        "#,
-                    )
-                    .bind(("owner_id", _user_id))
-                    .await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let mut msg_resp = match rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    SELECT labels, is_read
+                    FROM personal_messages
+                    WHERE owner_id = $owner_id;
+                    "#,
+                )
+                .bind(("owner_id", _user_id))
+                .await
+        }) {
+            Ok(resp) => resp,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(reauth_from_env(&self.client)) {
+                    let fresh = rt.block_on(connect_from_env()).map_err(|connect_err| {
+                        ForumError::Internal(format!(
+                            "query failed with 401; reauth failed: {}; reconnect failed: {}",
+                            reauth_err, connect_err
+                        ))
+                    })?;
+                    let mut retry_resp = rt
+                        .block_on(async {
+                            fresh
+                                .query(
+                                    r#"
+                                    SELECT labels, is_read
+                                    FROM personal_messages
+                                    WHERE owner_id = $owner_id;
+                                    "#,
+                                )
+                                .bind(("owner_id", _user_id))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?;
+                    retry_resp
+                }
+                else {
+                    rt.block_on(async {
+                    self.client
+                        .query(
+                            r#"
+                            SELECT labels, is_read
+                            FROM personal_messages
+                            WHERE owner_id = $owner_id;
+                            "#,
+                        )
+                        .bind(("owner_id", _user_id))
+                        .await
+                    })
+                    .map_err(|e| ForumError::Internal(e.to_string()))?
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
 
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct MsgRow {
             labels: Option<Vec<i64>>,
             is_read: Option<bool>,
@@ -2575,7 +2643,7 @@ impl ForumService for SurrealService {
         _start: usize,
         _limit: usize,
     ) -> Result<PersonalMessagePage, ForumError> {
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct PmRow {
             pm_id: i64,
             sender_id: i64,
@@ -2608,22 +2676,65 @@ impl ForumService for SurrealService {
         }
         base_query.push_str(" ORDER BY created_at_ms DESC LIMIT $limit START $start;");
 
-        let mut response = rt
-            .block_on(async {
-                let mut query = self.client.query(base_query.clone());
-                query = query
-                    .bind(("owner_id", _user_id))
-                    .bind(("folder", folder))
-                    .bind(("limit", _limit as i64))
-                    .bind(("start", _start as i64));
-                if let Some(label) = _label {
-                    if label >= 0 {
-                        query = query.bind(("label", label));
-                    }
+        let mut response = match rt.block_on(async {
+            let mut query = self.client.query(base_query.clone());
+            query = query
+                .bind(("owner_id", _user_id))
+                .bind(("folder", folder))
+                .bind(("limit", _limit as i64))
+                .bind(("start", _start as i64));
+            if let Some(label) = _label {
+                if label >= 0 {
+                    query = query.bind(("label", label));
                 }
-                query.await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
+            }
+            query.await
+        }) {
+            Ok(resp) => resp,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(reauth_from_env(&self.client)) {
+                    let fresh = rt.block_on(connect_from_env()).map_err(|connect_err| {
+                        ForumError::Internal(format!(
+                            "query failed with 401; reauth failed: {}; reconnect failed: {}",
+                            reauth_err, connect_err
+                        ))
+                    })?;
+                    rt.block_on(async {
+                        let mut query = fresh.query(base_query.clone());
+                        query = query
+                            .bind(("owner_id", _user_id))
+                            .bind(("folder", folder))
+                            .bind(("limit", _limit as i64))
+                            .bind(("start", _start as i64));
+                        if let Some(label) = _label {
+                            if label >= 0 {
+                                query = query.bind(("label", label));
+                            }
+                        }
+                        query.await
+                    })
+                    .map_err(|e| ForumError::Internal(e.to_string()))?
+                }
+                else {
+                    rt.block_on(async {
+                    let mut query = self.client.query(base_query.clone());
+                    query = query
+                        .bind(("owner_id", _user_id))
+                        .bind(("folder", folder))
+                        .bind(("limit", _limit as i64))
+                        .bind(("start", _start as i64));
+                    if let Some(label) = _label {
+                        if label >= 0 {
+                            query = query.bind(("label", label));
+                        }
+                    }
+                    query.await
+                    })
+                    .map_err(|e| ForumError::Internal(e.to_string()))?
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
 
         let rows: Vec<PmRow> = response.take(0).unwrap_or_default();
 
@@ -2668,20 +2779,55 @@ impl ForumService for SurrealService {
         }
         count_query.push(';');
 
-        let mut counts = rt
-            .block_on(async {
-                let mut query = self.client.query(count_query.clone());
-                query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
-                if let Some(label) = _label {
-                    if label >= 0 {
-                        query = query.bind(("label", label));
-                    }
+        let mut counts = match rt.block_on(async {
+            let mut query = self.client.query(count_query.clone());
+            query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
+            if let Some(label) = _label {
+                if label >= 0 {
+                    query = query.bind(("label", label));
                 }
-                query.await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
+            }
+            query.await
+        }) {
+            Ok(resp) => resp,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(reauth_from_env(&self.client)) {
+                    let fresh = rt.block_on(connect_from_env()).map_err(|connect_err| {
+                        ForumError::Internal(format!(
+                            "count query failed with 401; reauth failed: {}; reconnect failed: {}",
+                            reauth_err, connect_err
+                        ))
+                    })?;
+                    rt.block_on(async {
+                        let mut query = fresh.query(count_query.clone());
+                        query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
+                        if let Some(label) = _label {
+                            if label >= 0 {
+                                query = query.bind(("label", label));
+                            }
+                        }
+                        query.await
+                    })
+                    .map_err(|e| ForumError::Internal(e.to_string()))?
+                }
+                else {
+                    rt.block_on(async {
+                    let mut query = self.client.query(count_query.clone());
+                    query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
+                    if let Some(label) = _label {
+                        if label >= 0 {
+                            query = query.bind(("label", label));
+                        }
+                    }
+                    query.await
+                    })
+                    .map_err(|e| ForumError::Internal(e.to_string()))?
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
 
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct CountRow {
             total: Option<usize>,
             unread: Option<usize>,
@@ -2712,7 +2858,7 @@ impl ForumService for SurrealService {
         _user_id: i64,
         _pm_id: i64,
     ) -> Result<Option<PersonalMessageDetail>, ForumError> {
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct PmRow {
             pm_id: i64,
             _owner_id: i64,
@@ -2941,7 +3087,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct CountRow {
             count: Option<usize>,
         }
@@ -2979,7 +3125,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct CountRow {
             count: Option<usize>,
         }
@@ -3086,7 +3232,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             pm_id: i64,
             labels: Option<Vec<i64>>,
@@ -3145,7 +3291,7 @@ impl ForumService for SurrealService {
                     .await
             })
             .map_err(|e| ForumError::Internal(e.to_string()))?;
-        #[derive(Deserialize)]
+        #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             pm_id: i64,
             labels: Option<Vec<i64>>,

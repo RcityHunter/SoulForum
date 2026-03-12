@@ -4,6 +4,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::{net::SocketAddr, time::Duration};
 use tracing::error;
 
@@ -11,13 +13,31 @@ use btc_forum_shared::{
     AuthMeResponse, AuthResponse, AuthUser, ErrorCode, LoginRequest, RegisterRequest,
     RegisterResponse,
 };
+use btc_forum_rust::{
+    auth::AuthClaims,
+    security::is_not_banned,
+    services::{ForumContext, ForumError},
+    surreal::reauth_from_env,
+};
 
 use super::{
+    auth::build_ctx_from_user,
     auth::bearer_from_headers,
     error::{api_error, api_error_from_status, rainbow_auth_error_response},
     guards::enforce_rate,
     state::AppState,
 };
+
+fn ban_markers_from_ctx(ctx: &ForumContext) -> Vec<String> {
+    let mut permissions = Vec::new();
+    if ctx.session.bool("ban_cannot_post") {
+        permissions.push("ban_cannot_post".to_string());
+    }
+    if ctx.session.bool("ban_cannot_access") {
+        permissions.push("ban_cannot_access".to_string());
+    }
+    permissions
+}
 
 pub(crate) async fn register(
     State(state): State<AppState>,
@@ -55,7 +75,10 @@ pub(crate) async fn register(
             }),
         )
             .into_response(),
-        Err(err) => rainbow_auth_error_response(err).into_response(),
+        Err(err) => {
+            error!(error = %err, "login failed via rainbow-auth");
+            rainbow_auth_error_response(err).into_response()
+        }
     }
 }
 
@@ -75,23 +98,41 @@ pub(crate) async fn login(
 
     match state.rainbow_auth.login(email, &payload.password).await {
         Ok(login) => {
-            let forum_user = match state
+            let fallback_member_id = {
+                let mut hasher = DefaultHasher::new();
+                login.user.email.hash(&mut hasher);
+                let hashed = (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64;
+                if hashed == 0 { 1 } else { hashed }
+            };
+
+            let member_id = match state
                 .surreal
                 .ensure_user(&login.user.email, None, None)
                 .await
             {
-                Ok(user) => user,
+                Ok(user) => user.legacy_id(),
                 Err(err) => {
-                    error!(error = %err, "failed to ensure user after login");
-                    return api_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        ErrorCode::Internal,
-                        "failed to sync user",
-                    )
-                    .into_response();
+                    let msg = err.to_string();
+                    if msg.contains("401") || msg.contains("Unauthorized") {
+                        error!(error = %err, "ensure_user failed with 401, reauth and retry");
+                        if let Err(reauth_err) = reauth_from_env(state.surreal.client()).await {
+                            error!(error = %reauth_err, "surreal reauth failed in login route, fallback member_id will be used");
+                            fallback_member_id
+                        } else {
+                            match state.surreal.ensure_user(&login.user.email, None, None).await {
+                                Ok(user) => user.legacy_id(),
+                                Err(retry_err) => {
+                                    error!(error = %retry_err, "failed to ensure user after login retry, fallback member_id will be used");
+                                    fallback_member_id
+                                }
+                            }
+                        }
+                    } else {
+                        error!(error = %err, "failed to ensure user after login, fallback member_id will be used");
+                        fallback_member_id
+                    }
                 }
             };
-            let member_id = forum_user.legacy_id();
             (
                 StatusCode::OK,
                 Json(AuthResponse {
@@ -126,11 +167,55 @@ pub(crate) async fn auth_me(
 
     match state.rainbow_auth.me(&token).await {
         Ok(user) => {
-            let member_id = match state.surreal.ensure_user(&user.email, None, None).await {
-                Ok(forum_user) => forum_user.legacy_id(),
+            let (member_id, permissions) = match state.surreal.ensure_user(&user.email, None, None).await {
+                Ok(forum_user) => {
+                    let claims = AuthClaims {
+                        sub: user.email.clone(),
+                        ..AuthClaims::default()
+                    };
+                    let fallback_ctx = build_ctx_from_user(&forum_user, &claims);
+                    let forum_service = state.forum_service.clone();
+                    match tokio::task::spawn_blocking(move || {
+                        let mut ctx = fallback_ctx;
+                        is_not_banned(&forum_service, &mut ctx, false)?;
+                        Ok::<ForumContext, ForumError>(ctx)
+                    })
+                    .await
+                    {
+                        Ok(Ok(ctx)) => (forum_user.legacy_id(), ban_markers_from_ctx(&ctx)),
+                        Ok(Err(ForumError::PermissionDenied(_))) => (
+                            forum_user.legacy_id(),
+                            vec!["ban_cannot_access".to_string()],
+                        ),
+                        Ok(Err(err)) => {
+                            error!(error = %err, "failed to evaluate ban flags for auth/me");
+                            (forum_user.legacy_id(), Vec::new())
+                        }
+                        Err(err) => {
+                            error!(error = %err, "failed to join ban evaluation task for auth/me");
+                            (forum_user.legacy_id(), Vec::new())
+                        }
+                    }
+                }
                 Err(err) => {
-                    error!(error = %err, "failed to sync user for auth/me");
-                    0
+                    let msg = err.to_string();
+                    if msg.contains("401") || msg.contains("Unauthorized") {
+                        error!(error = %err, "ensure_user failed with 401 in auth/me, reauth and retry");
+                        if reauth_from_env(state.surreal.client()).await.is_ok() {
+                            match state.surreal.ensure_user(&user.email, None, None).await {
+                                Ok(forum_user) => (forum_user.legacy_id(), Vec::new()),
+                                Err(retry_err) => {
+                                    error!(error = %retry_err, "failed to sync user for auth/me after retry");
+                                    (0, Vec::new())
+                                }
+                            }
+                        } else {
+                            (0, Vec::new())
+                        }
+                    } else {
+                        error!(error = %err, "failed to sync user for auth/me");
+                        (0, Vec::new())
+                    }
                 }
             };
             (
@@ -140,7 +225,7 @@ pub(crate) async fn auth_me(
                     user: AuthUser {
                         name: user.email,
                         role: None,
-                        permissions: Some(Vec::new()),
+                        permissions: Some(permissions),
                         member_id: Some(member_id),
                     },
                 }),

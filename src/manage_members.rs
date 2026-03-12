@@ -49,6 +49,8 @@ pub fn ban_members<S: ForumService>(
         id: 0,
         reason,
         expires_at: None,
+        cannot_post: true,
+        cannot_access: false,
         conditions,
     })?;
     service.log_action(

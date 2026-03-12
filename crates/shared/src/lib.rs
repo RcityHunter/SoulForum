@@ -3,11 +3,14 @@ pub mod error;
 
 pub use dto::admin::{
     ActionLogEntry, ActionLogsResponse, AdminAccount, AdminAccountsResponse, AdminGroup,
-    AdminGroupsResponse, AdminNotifyPayload, AdminNotifyResponse, AdminUser, AdminUsersResponse,
-    BanApplyResponse, BanListResponse, BanMemberView, BanPayload, BanRevokeResponse, BanRuleView,
-    BoardAccessEntry, BoardAccessPayload, BoardAccessResponse, BoardPermissionEntry,
-    BoardPermissionPayload, BoardPermissionResponse, UpdateBoardAccessResponse,
-    UpdateBoardPermissionResponse,
+    AdminGroupsResponse, AdminNotifyPayload, AdminNotifyResponse, AdminTransferPayload,
+    AdminTransferResponse, AdminUser, AdminUsersResponse, BanApplyResponse, BanListResponse,
+    BanMemberView, BanPayload, BanRevokeResponse, BanRuleView, BoardAccessEntry,
+    BoardAccessPayload, BoardAccessResponse, BoardPermissionEntry, BoardPermissionPayload,
+    BoardPermissionResponse, DocsPermissionGrantByRecordPayload, DocsPermissionGrantResponse,
+    DocsPermissionRevokeByRecordPayload, DocsPermissionRevokeResponse,
+    ModeratorUpdateByRecordPayload, ModeratorUpdatePayload, ModeratorUpdateResponse,
+    UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
 };
 pub use dto::attachment::{
     AttachmentCreateResponse, AttachmentDeletePayload, AttachmentDeleteResponse,

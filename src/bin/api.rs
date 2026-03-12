@@ -8,7 +8,7 @@ use axum::{
 };
 use dotenvy::dotenv;
 use std::{env, net::SocketAddr, sync::Arc, time::Instant};
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -23,9 +23,11 @@ use tower_http::cors::CorsLayer;
 mod api;
 
 use api::admin_routes::{
-    admin_notify, apply_ban, get_board_access, get_board_permissions, list_action_logs,
-    list_admins, list_bans, list_groups, list_users, revoke_ban, update_board_access,
-    update_board_permissions,
+    admin_notify, apply_ban, assign_moderator, assign_moderator_by_record, get_board_access,
+    get_board_permissions, grant_docs_space_create_by_record, list_action_logs, list_admins,
+    list_bans, list_groups, list_users, revoke_ban, revoke_docs_space_create_by_record,
+    revoke_moderator,
+    revoke_moderator_by_record, transfer_admin, update_board_access, update_board_permissions,
 };
 use api::attachment_routes::{
     create_attachment_meta, delete_attachment_api, list_attachments, serve_upload,
@@ -225,6 +227,23 @@ async fn main() {
         .await
         .expect("failed to connect to SurrealDB");
     let surreal = SurrealForumService::new(surreal);
+
+    // Keep SurrealDB auth fresh.
+    // In some setups SurrealDB tokens expire (e.g. ~1h) which would make /rpc start returning 401.
+    // This background task re-signs in periodically to refresh the token.
+    {
+        let client = surreal.client().clone();
+        tokio::spawn(async move {
+            let every = std::time::Duration::from_secs(30 * 60);
+            loop {
+                tokio::time::sleep(every).await;
+                if let Err(err) = btc_forum_rust::surreal::reauth_from_env(&client).await {
+                    tracing::warn!(error = %err, "surreal auth refresh failed");
+                }
+            }
+        });
+    }
+
     let forum_service = SurrealService::new(surreal.client().clone());
     let rainbow_auth = RainbowAuthClient::new(rainbow_auth_base_url());
     let cors_origin = env::var("CORS_ORIGIN")
@@ -301,6 +320,19 @@ async fn main() {
         .route("/admin/bans/apply", post(apply_ban))
         .route("/admin/bans/revoke", post(revoke_ban))
         .route("/admin/notify", post(admin_notify))
+        .route("/admin/moderators/:member_id/assign", post(assign_moderator))
+        .route("/admin/moderators/:member_id/revoke", post(revoke_moderator))
+        .route("/admin/moderators/assign_by_record", post(assign_moderator_by_record))
+        .route("/admin/moderators/revoke_by_record", post(revoke_moderator_by_record))
+        .route(
+            "/admin/docs/grant_space_create_by_record",
+            post(grant_docs_space_create_by_record),
+        )
+        .route(
+            "/admin/docs/revoke_space_create_by_record",
+            post(revoke_docs_space_create_by_record),
+        )
+        .route("/admin/admins/transfer", post(transfer_admin))
         .route(
             "/admin/board_access",
             get(get_board_access).post(update_board_access),
@@ -328,7 +360,16 @@ async fn main() {
                 ])
                 .allow_credentials(true)
         })
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(
+                    DefaultMakeSpan::new()
+                        .level(tracing::Level::INFO)
+                        .include_headers(false),
+                )
+                .on_response(DefaultOnResponse::new().level(tracing::Level::INFO))
+                .on_failure(DefaultOnFailure::new().level(tracing::Level::ERROR)),
+        )
         .with_state(state);
 
     let addr: SocketAddr = env::var("BIND_ADDR")

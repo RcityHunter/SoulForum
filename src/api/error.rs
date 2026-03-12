@@ -40,6 +40,13 @@ pub(crate) fn api_error_from_status(
 pub(crate) fn rainbow_auth_error_response(err: RainbowAuthError) -> (StatusCode, Json<ApiError>) {
     match err {
         RainbowAuthError::Http { status, message } => {
+            // Upstream auth service 5xx should be surfaced as gateway failure
+            // instead of pretending our API itself failed internally.
+            let response_status = if status.is_server_error() {
+                StatusCode::BAD_GATEWAY
+            } else {
+                status
+            };
             let code = match status {
                 StatusCode::UNAUTHORIZED => ErrorCode::Unauthorized,
                 StatusCode::FORBIDDEN => ErrorCode::Forbidden,
@@ -49,7 +56,7 @@ pub(crate) fn rainbow_auth_error_response(err: RainbowAuthError) -> (StatusCode,
                 _ if status.is_server_error() => ErrorCode::BadGateway,
                 _ => ErrorCode::Validation,
             };
-            api_error(status, code, message)
+            api_error(response_status, code, message)
         }
         RainbowAuthError::Transport(message) | RainbowAuthError::Parse(message) => {
             api_error(StatusCode::BAD_GATEWAY, ErrorCode::BadGateway, message)

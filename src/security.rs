@@ -67,6 +67,8 @@ fn condition_matches(ctx: &ForumContext, condition: &BanCondition) -> bool {
 fn apply_ban_context(ctx: &mut ForumContext, rule: &BanRule) {
     ctx.session.set("ban_active", true);
     ctx.session.set("ban_rule", rule.id);
+    ctx.session.set("ban_cannot_post", rule.cannot_post);
+    ctx.session.set("ban_cannot_access", rule.cannot_access);
     if let Some(reason) = &rule.reason {
         ctx.session.set("ban_reason", reason);
     }
@@ -108,10 +110,17 @@ pub fn is_not_banned<S: ForumService>(
             service
                 .record_ban_hit(&[rule.id], Some(&ctx.user_info.email))
                 .ok();
-            return Err(ForumError::PermissionDenied("banned".into()));
+            if rule.cannot_access {
+                return Err(ForumError::PermissionDenied("banned".into()));
+            }
+            return Ok(());
         }
     }
     ctx.session.remove("ban_active");
+    ctx.session.remove("ban_rule");
+    ctx.session.remove("ban_reason");
+    ctx.session.remove("ban_cannot_post");
+    ctx.session.remove("ban_cannot_access");
     Ok(())
 }
 

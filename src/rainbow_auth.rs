@@ -63,6 +63,99 @@ impl RainbowAuthClient {
             .map_err(RainbowAuthError::from)?;
         parse_json_response(resp).await
     }
+
+    pub async fn get_user_permissions(
+        &self,
+        admin_token: &str,
+        user_id: &str,
+    ) -> Result<Vec<String>, RainbowAuthError> {
+        let url = format!(
+            "{}/api/rbac/users/{}/permissions",
+            self.base_url.trim_end_matches('/'),
+            user_id
+        );
+        let resp = self
+            .http
+            .get(url)
+            .bearer_auth(admin_token)
+            .send()
+            .await
+            .map_err(RainbowAuthError::from)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(RainbowAuthError::from)?;
+        if !status.is_success() {
+            return Err(RainbowAuthError::Http {
+                status,
+                message: text,
+            });
+        }
+        let parsed: RainbowApiResponse<Vec<String>> = serde_json::from_str(&text)?;
+        if parsed.success {
+            Ok(parsed.data.unwrap_or_default())
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    pub async fn assign_role_to_user(
+        &self,
+        admin_token: &str,
+        user_id: &str,
+        role_name: &str,
+    ) -> Result<(), RainbowAuthError> {
+        let url = format!(
+            "{}/api/rbac/users/{}/roles/assign",
+            self.base_url.trim_end_matches('/'),
+            user_id
+        );
+        let resp = self
+            .http
+            .post(url)
+            .bearer_auth(admin_token)
+            .json(&RainbowAssignRoleRequest { role_name })
+            .send()
+            .await
+            .map_err(RainbowAuthError::from)?;
+        let status = resp.status();
+        let body = resp.text().await.map_err(RainbowAuthError::from)?;
+        if !status.is_success() {
+            return Err(RainbowAuthError::Http {
+                status,
+                message: body,
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn remove_role_from_user(
+        &self,
+        admin_token: &str,
+        user_id: &str,
+        role_name: &str,
+    ) -> Result<(), RainbowAuthError> {
+        let url = format!(
+            "{}/api/rbac/users/{}/roles/remove",
+            self.base_url.trim_end_matches('/'),
+            user_id
+        );
+        let resp = self
+            .http
+            .post(url)
+            .bearer_auth(admin_token)
+            .json(&RainbowAssignRoleRequest { role_name })
+            .send()
+            .await
+            .map_err(RainbowAuthError::from)?;
+        let status = resp.status();
+        let body = resp.text().await.map_err(RainbowAuthError::from)?;
+        if !status.is_success() {
+            return Err(RainbowAuthError::Http {
+                status,
+                message: body,
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -96,6 +189,16 @@ impl std::fmt::Display for RainbowAuthError {
     }
 }
 
+impl RainbowAuthError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            RainbowAuthError::Http { status, .. } => status.is_server_error(),
+            RainbowAuthError::Transport(_) => true,
+            RainbowAuthError::Parse(_) => false,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct RainbowLoginRequest<'a> {
     email: &'a str,
@@ -106,6 +209,19 @@ struct RainbowLoginRequest<'a> {
 struct RainbowRegisterRequest<'a> {
     email: &'a str,
     password: &'a str,
+}
+
+#[derive(Serialize)]
+struct RainbowAssignRoleRequest<'a> {
+    role_name: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct RainbowApiResponse<T> {
+    success: bool,
+    #[allow(dead_code)]
+    message: Option<String>,
+    data: Option<T>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -1,7 +1,7 @@
 use axum::{http::StatusCode, Json};
 
 use btc_forum_rust::{
-    auth::AuthClaims, rainbow_auth::RainbowUser, services::ForumContext, surreal::SurrealUser,
+    auth::AuthClaims, rainbow_auth::RainbowUser, security::is_not_banned, services::{ForumContext, ForumError}, surreal::SurrealUser,
 };
 
 use super::{error::api_error_from_status, state::AppState};
@@ -41,6 +41,16 @@ pub(crate) async fn resolve_rainbow_user(
     match state.rainbow_auth.me(token).await {
         Ok(user) => Some(user),
         Err(err) => {
+            if err.is_retryable() {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                match state.rainbow_auth.me(token).await {
+                    Ok(user) => return Some(user),
+                    Err(retry_err) => {
+                        tracing::error!(error = %retry_err, "rainbow-auth user lookup failed after retry");
+                        return None;
+                    }
+                }
+            }
             tracing::error!(error = %err, "rainbow-auth user lookup failed");
             None
         }
@@ -65,10 +75,16 @@ pub(crate) async fn ensure_user_ctx(
             if let Some(user_info) = resolved_user {
                 let mut user = user;
                 user.name = user_info.email;
-                let ctx = build_ctx_from_user(&user, claims);
+                let ctx = match enrich_ctx_with_ban_state(state, build_ctx_from_user(&user, claims)).await {
+                    Ok(ctx) => ctx,
+                    Err(resp) => return Err(resp),
+                };
                 return Ok((user, ctx));
             }
-            let ctx = build_ctx_from_user(&user, claims);
+            let ctx = match enrich_ctx_with_ban_state(state, build_ctx_from_user(&user, claims)).await {
+                Ok(ctx) => ctx,
+                Err(resp) => return Err(resp),
+            };
             Ok((user, ctx))
         }
         Err(err) => {
@@ -77,6 +93,34 @@ pub(crate) async fn ensure_user_ctx(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to ensure user",
             ))
+        }
+    }
+}
+
+async fn enrich_ctx_with_ban_state(
+    state: &AppState,
+    ctx: ForumContext,
+) -> Result<ForumContext, (StatusCode, Json<btc_forum_shared::ApiError>)> {
+    let forum_service = state.forum_service.clone();
+    let fallback_ctx = ctx.clone();
+    match tokio::task::spawn_blocking(move || {
+        let mut ctx = ctx;
+        is_not_banned(&forum_service, &mut ctx, false)?;
+        Ok::<ForumContext, ForumError>(ctx)
+    })
+    .await
+    {
+        Ok(Ok(ctx)) => Ok(ctx),
+        Ok(Err(ForumError::PermissionDenied(message))) => {
+            Err(api_error_from_status(StatusCode::FORBIDDEN, message))
+        }
+        Ok(Err(other)) => {
+            tracing::warn!(error = %other, "failed to evaluate ban state; continuing without ban enforcement");
+            Ok(fallback_ctx.clone())
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to evaluate ban state task; continuing without ban enforcement");
+            Ok(fallback_ctx)
         }
     }
 }
@@ -101,6 +145,11 @@ pub(crate) fn build_ctx_from_user(user: &SurrealUser, claims: &AuthClaims) -> Fo
         .or_else(|| claims.permissions.clone())
     {
         ctx.user_info.permissions.extend(perms);
+    }
+
+    // Treat forum-level manage permission as admin-equivalent for admin APIs.
+    if ctx.user_info.permissions.contains("manage_boards") {
+        ctx.user_info.is_admin = true;
     }
 
     ctx.user_info.groups.clear();

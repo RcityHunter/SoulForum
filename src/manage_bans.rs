@@ -67,6 +67,8 @@ impl<S: ForumService> BanController<S> {
             id: id.unwrap_or(0),
             reason,
             expires_at: expires,
+            cannot_post: true,
+            cannot_access: false,
             conditions,
         };
         self.service.save_ban_rule(rule)

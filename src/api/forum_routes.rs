@@ -11,7 +11,7 @@ use tracing::error;
 use btc_forum_rust::{
     auth::AuthClaims,
     services::{BoardAccessEntry, ForumContext},
-    surreal::{SurrealPost, SurrealTopic},
+    surreal::{connect_from_env, create_board as create_board_with_client, SurrealPost, SurrealTopic},
 };
 use btc_forum_shared::{
     Board, BoardsResponse, CreateBoardPayload, CreateBoardResponse, CreatePostPayload,
@@ -117,11 +117,13 @@ pub(crate) async fn create_surreal_board(
     if let Err(resp) = ensure_permission(&state, &ctx, "manage_boards") {
         return resp.into_response();
     }
-    match state
-        .surreal
-        .create_board(&payload.name, payload.description.as_deref())
-        .await
-    {
+    let board_result = async {
+        let fresh = connect_from_env().await?;
+        create_board_with_client(&fresh, &payload.name, payload.description.as_deref()).await
+    }
+    .await;
+
+    match board_result {
         Ok(board) => (
             StatusCode::CREATED,
             Json(CreateBoardResponse {

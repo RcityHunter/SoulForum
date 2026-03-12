@@ -44,6 +44,9 @@ pub(crate) async fn list_attachments(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
+    if let Err(resp) = ensure_user_ctx(&state, &claims).await.map(|_| ()) {
+        return resp.into_response();
+    }
     let base_url = upload_base_url();
     match state.surreal.list_attachments_for_user(&claims.sub).await {
         Ok(items) => (
@@ -76,6 +79,13 @@ pub(crate) async fn create_attachment_meta(
     };
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
+    }
+    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+        Ok(value) => value,
+        Err(resp) => return resp.into_response(),
+    };
+    if ctx.session.bool("ban_cannot_access") || ctx.session.bool("ban_cannot_post") {
+        return api_error_from_status(StatusCode::FORBIDDEN, "banned").into_response();
     }
     let key = format!("attach:{}", addr.ip());
     if let Err(resp) = enforce_rate(&state, &key, 30, Duration::from_secs(60)) {
@@ -142,6 +152,13 @@ pub(crate) async fn upload_attachment(
     };
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
+    }
+    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+        Ok(value) => value,
+        Err(resp) => return resp.into_response(),
+    };
+    if ctx.session.bool("ban_cannot_access") || ctx.session.bool("ban_cannot_post") {
+        return api_error_from_status(StatusCode::FORBIDDEN, "banned").into_response();
     }
     let key = format!("attach_upload:{}", addr.ip());
     if let Err(resp) = enforce_rate(&state, &key, 10, Duration::from_secs(60)) {

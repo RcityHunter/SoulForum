@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AdminUser {
     pub id: i64,
+    pub record_id: Option<String>,
+    pub auth_user_id: Option<String>,
     pub name: String,
     pub primary_group: Option<i64>,
     pub additional_groups: Vec<i64>,
@@ -18,6 +20,8 @@ pub struct AdminUsersResponse {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AdminAccount {
     pub id: i64,
+    pub record_id: Option<String>,
+    pub auth_user_id: Option<String>,
     pub name: String,
     pub role: Option<String>,
     pub permissions: Vec<String>,
@@ -99,6 +103,71 @@ pub struct UpdateBoardPermissionResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct ModeratorUpdatePayload {
+    pub member_id: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct ModeratorUpdateByRecordPayload {
+    pub record_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DocsPermissionGrantByRecordPayload {
+    pub record_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DocsPermissionRevokeByRecordPayload {
+    pub record_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct ModeratorUpdateResponse {
+    pub status: String,
+    pub member_id: i64,
+    pub record_id: Option<String>,
+    pub role: String,
+    pub primary_group: Option<i64>,
+    pub additional_groups: Vec<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DocsPermissionGrantResponse {
+    pub status: String,
+    pub record_id: String,
+    pub auth_user_id: String,
+    pub granted_role: String,
+    pub already_granted: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DocsPermissionRevokeResponse {
+    pub status: String,
+    pub record_id: String,
+    pub auth_user_id: String,
+    pub revoked_role: String,
+    pub already_revoked: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct AdminTransferPayload {
+    #[serde(default)]
+    pub target_member_id: Option<i64>,
+    #[serde(default)]
+    pub target_record_id: Option<String>,
+    #[serde(default)]
+    pub demote_self: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct AdminTransferResponse {
+    pub status: String,
+    pub from_member_id: i64,
+    pub to_member_id: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct BanMemberView {
     pub member_id: i64,
     pub name: String,
@@ -109,6 +178,10 @@ pub struct BanRuleView {
     pub id: i64,
     pub expires_at: Option<String>,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub cannot_post: bool,
+    #[serde(default)]
+    pub cannot_access: bool,
     #[serde(default)]
     pub members: Vec<BanMemberView>,
     #[serde(default)]
@@ -144,6 +217,10 @@ pub struct BanPayload {
     pub ban_id: Option<i64>,
     pub reason: Option<String>,
     pub hours: Option<i64>,
+    #[serde(default)]
+    pub cannot_post: bool,
+    #[serde(default)]
+    pub cannot_access: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

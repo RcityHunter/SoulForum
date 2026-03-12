@@ -1,4 +1,5 @@
 use axum::{http::StatusCode, Json};
+use surrealdb_types::SurrealValue;
 
 use btc_forum_rust::{
     security::load_permissions,
@@ -113,7 +114,10 @@ pub(crate) async fn ensure_board_access(
 pub(crate) fn ensure_admin(
     ctx: &ForumContext,
 ) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
-    if ctx.user_info.is_admin || ctx.user_info.permissions.contains("admin") {
+    if ctx.user_info.is_admin
+        || ctx.user_info.permissions.contains("admin")
+        || ctx.user_info.permissions.contains("manage_boards")
+    {
         Ok(())
     } else {
         Err(api_error_from_status(
@@ -211,7 +215,7 @@ pub(crate) async fn fetch_topic_board_id(client: &SurrealClient, topic_id: &str)
         .bind(("id", topic_id_owned))
         .await
         .ok()?;
-    #[derive(serde::Deserialize)]
+    #[derive(Debug, Clone, SurrealValue)]
     struct Row {
         board_id: Option<String>,
     }

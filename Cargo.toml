@@ -22,7 +22,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jsonwebtoken = "9"
 axum-extra = { version = "0.9", features = ["typed-header"] }
-surrealdb = { version = "2.3.10", features = ["protocol-http"] }
+surrealdb = { version = "3.0.0", features = ["protocol-http"] }
+surrealdb-types = "3.0.0"
 tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 ammonia = "3"
 argon2 = { version = "0.5", features = ["std"] }

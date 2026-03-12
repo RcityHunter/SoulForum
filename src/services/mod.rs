@@ -158,7 +158,7 @@ impl Default for UserInfo {
             ip: String::from("127.0.0.1"),
             query_wanna_see_board: String::new(),
             language: String::from("en_US"),
-            groups: vec![0],
+            groups: vec![4],
             warning: 0,
             possibly_robot: false,
         }
@@ -470,6 +470,10 @@ pub struct BanRule {
     pub id: i64,
     pub reason: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub cannot_post: bool,
+    #[serde(default)]
+    pub cannot_access: bool,
     pub conditions: Vec<BanCondition>,
 }
 
@@ -1285,6 +1289,8 @@ impl InMemoryService {
                 id: 1,
                 reason: Some("Spammer".into()),
                 expires_at: None,
+                cannot_post: true,
+                cannot_access: false,
                 conditions: vec![BanCondition {
                     id: 10,
                     reason: Some("Banned email".into()),

@@ -49,6 +49,9 @@ pub(crate) async fn create_notification(
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
+    if ctx.session.bool("ban_cannot_access") || ctx.session.bool("ban_cannot_post") {
+        return api_error_from_status(StatusCode::FORBIDDEN, "banned").into_response();
+    }
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
@@ -136,6 +139,9 @@ pub(crate) async fn list_notifications(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
+    if let Err(resp) = ensure_user_ctx(&state, &claims).await.map(|_| ()) {
+        return resp.into_response();
+    }
     let target = claims.sub.clone();
     match state.surreal.list_notifications(&target).await {
         Ok(items) => (

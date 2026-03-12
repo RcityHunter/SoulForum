@@ -132,6 +132,9 @@ pub(crate) async fn send_personal_message_api(
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
+    if ctx.session.bool("ban_cannot_access") || ctx.session.bool("ban_cannot_post") {
+        return api_error_from_status(StatusCode::FORBIDDEN, "banned").into_response();
+    }
 
     let recipients = payload.to.clone();
     let recipient_ids = match run_forum_blocking(&state, move |forum| {
