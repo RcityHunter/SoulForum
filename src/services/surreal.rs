@@ -1,25 +1,26 @@
 use crate::services::{
     ActionLogEntry, AttachmentInfo, AttachmentRecord, AttachmentUpload, BanLogEntry, BanRule,
-    BoardAccessEntry, BoardListOptions, BoardSummary, CalendarEvent, DraftStorage, ForumContext,
-    ForumError, ForumService, GroupAssignType, GroupMember, MemberRecord, MembergroupData,
-    MembergroupListEntry, MembergroupListType, MembergroupSettings, MembergroupSummary,
-    MessageData, MessageEditData, NotifyPrefs, PermissionChange, PermissionGroupContext,
-    PermissionProfile, PermissionSnapshot, PersonalMessageDetail, PersonalMessageFolder,
-    PersonalMessageLabel, PersonalMessageOverview, PersonalMessagePage, PersonalMessagePeer,
-    PersonalMessageSearchQuery, PersonalMessageSendResult, PersonalMessageSummary, PmDraftRecord,
-    PmPreferenceState, PollData, PostedMessage, QuoteContent, SendPersonalMessage,
-    SessionCheckMode, TopicPostingContext,
+    BoardAccessEntry, BoardListOptions, BoardNotificationSummary, BoardSummary, CalendarEvent,
+    DraftStorage, ForumContext, ForumError, ForumService, GroupAssignType, GroupMember,
+    MemberRecord, MembergroupData, MembergroupListEntry, MembergroupListType, MembergroupSettings,
+    MembergroupSummary, MentionRecord, MessageData, MessageEditData, NotifyPrefs, PermissionChange,
+    PermissionGroupContext, PermissionProfile, PermissionSnapshot, PersonalMessageDetail,
+    PersonalMessageFolder, PersonalMessageLabel, PersonalMessageOverview, PersonalMessagePage,
+    PersonalMessagePeer, PersonalMessageSearchQuery, PersonalMessageSendResult,
+    PersonalMessageSummary, PmDraftRecord, PmPreferenceState, PollData, PostedMessage,
+    QuoteContent, SendPersonalMessage, SessionCheckMode, TopicLogEntry, TopicNotificationSummary,
+    TopicPostingContext,
 };
 use crate::surreal::{
-    create_board as surreal_create_board, create_post_in_topic as surreal_create_post_in_topic,
-    create_topic as surreal_create_topic, get_user_by_name, list_boards as surreal_list_boards,
-    list_posts_for_topic as surreal_list_posts_for_topic, SurrealClient, connect_from_env,
-    reauth_from_env,
+    connect_from_env, create_board as surreal_create_board,
+    create_post_in_topic as surreal_create_post_in_topic, create_topic as surreal_create_topic,
+    get_user_by_name, list_boards as surreal_list_boards,
+    list_posts_for_topic as surreal_list_posts_for_topic, reauth_from_env, SurrealClient,
 };
 use chrono::{TimeZone, Utc};
-use surrealdb::types::SurrealValue;
 use serde_json::Value;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use surrealdb::types::SurrealValue;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, SurrealValue)]
 struct PostRow {
@@ -699,6 +700,294 @@ impl ForumService for SurrealService {
         Ok(NotifyPrefs {
             msg_auto_notify: false,
         })
+    }
+
+    fn is_board_notification_set(&self, member_id: i64, board_id: i64) -> Result<bool, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT VALUE count()
+                        FROM board_notifications
+                        WHERE member_id = $member_id AND board_id = $board_id
+                        GROUP ALL;
+                        "#,
+                    )
+                    .bind(("member_id", member_id))
+                    .bind(("board_id", board_id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let count: Option<i64> = response.take(0).ok().and_then(|mut v: Vec<i64>| v.pop());
+        Ok(count.unwrap_or(0) > 0)
+    }
+
+    fn add_board_notification(&self, member_id: i64, board_id: i64) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let id = format!("{member_id}:{board_id}");
+        rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    UPSERT type::thing("board_notifications", $id) SET
+                        member_id = $member_id,
+                        board_id = $board_id,
+                        created_at = time::now();
+                    "#,
+                )
+                .bind(("id", id))
+                .bind(("member_id", member_id))
+                .bind(("board_id", board_id))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
+    fn remove_board_notification(&self, member_id: i64, board_id: i64) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let id = format!("{member_id}:{board_id}");
+        rt.block_on(async {
+            self.client
+                .query("DELETE type::thing(\"board_notifications\", $id);")
+                .bind(("id", id))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
+    fn is_topic_notification_set(&self, member_id: i64, topic_id: i64) -> Result<bool, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT VALUE count()
+                        FROM topic_notifications
+                        WHERE member_id = $member_id AND topic_id = $topic_id
+                        GROUP ALL;
+                        "#,
+                    )
+                    .bind(("member_id", member_id))
+                    .bind(("topic_id", topic_id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let count: Option<i64> = response.take(0).ok().and_then(|mut v: Vec<i64>| v.pop());
+        Ok(count.unwrap_or(0) > 0)
+    }
+
+    fn add_topic_notification(&self, member_id: i64, topic_id: i64) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let id = format!("{member_id}:{topic_id}");
+        rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    UPSERT type::thing("topic_notifications", $id) SET
+                        member_id = $member_id,
+                        topic_id = $topic_id,
+                        created_at = time::now();
+                    "#,
+                )
+                .bind(("id", id))
+                .bind(("member_id", member_id))
+                .bind(("topic_id", topic_id))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
+    fn remove_topic_notification(&self, member_id: i64, topic_id: i64) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let id = format!("{member_id}:{topic_id}");
+        rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    DELETE type::thing("topic_notifications", $id);
+                    DELETE type::thing("topic_logs", $id);
+                    "#,
+                )
+                .bind(("id", id))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
+    fn load_topic_log(
+        &self,
+        member_id: i64,
+        topic_id: i64,
+    ) -> Result<Option<TopicLogEntry>, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        #[derive(Debug, Clone, SurrealValue)]
+        struct TopicLogRow {
+            member_id: Option<i64>,
+            topic_id: Option<i64>,
+            last_msg_id: Option<i64>,
+            unwatched: Option<bool>,
+        }
+        let id = format!("{member_id}:{topic_id}");
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT member_id, topic_id, last_msg_id, unwatched
+                        FROM topic_logs
+                        WHERE meta::id(id) = type::thing("topic_logs", $id)
+                        LIMIT 1;
+                        "#,
+                    )
+                    .bind(("id", id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let row: Option<TopicLogRow> = response
+            .take(0)
+            .ok()
+            .and_then(|mut v: Vec<TopicLogRow>| v.pop());
+        Ok(row.map(|row| TopicLogEntry {
+            member_id: row.member_id.unwrap_or(member_id),
+            topic_id: row.topic_id.unwrap_or(topic_id),
+            last_msg_id: row.last_msg_id.unwrap_or_default(),
+            unwatched: row.unwatched.unwrap_or(false),
+        }))
+    }
+
+    fn save_topic_log(&self, entry: TopicLogEntry) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let id = format!("{}:{}", entry.member_id, entry.topic_id);
+        rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    UPSERT type::thing("topic_logs", $id) SET
+                        member_id = $member_id,
+                        topic_id = $topic_id,
+                        last_msg_id = $last_msg_id,
+                        unwatched = $unwatched,
+                        updated_at = time::now();
+                    "#,
+                )
+                .bind(("id", id))
+                .bind(("member_id", entry.member_id))
+                .bind(("topic_id", entry.topic_id))
+                .bind(("last_msg_id", entry.last_msg_id))
+                .bind(("unwatched", entry.unwatched))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
+    fn list_board_notifications(
+        &self,
+        member_id: i64,
+    ) -> Result<Vec<BoardNotificationSummary>, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        #[derive(Debug, Clone, SurrealValue)]
+        struct Row {
+            board_id: Option<i64>,
+            board_name: Option<String>,
+        }
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT board_id,
+                               (SELECT VALUE name FROM boards WHERE meta::id(id) = type::thing("boards", string::from(board_id)) LIMIT 1)[0] AS board_name
+                        FROM board_notifications
+                        WHERE member_id = $member_id
+                        ORDER BY board_id ASC;
+                        "#,
+                    )
+                    .bind(("member_id", member_id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let rows: Vec<Row> = response.take(0).unwrap_or_default();
+        Ok(rows
+            .into_iter()
+            .map(|row| BoardNotificationSummary {
+                id: row.board_id.unwrap_or_default(),
+                name: row.board_name.unwrap_or_else(|| "Unknown".into()),
+            })
+            .collect())
+    }
+
+    fn list_topic_notifications(
+        &self,
+        member_id: i64,
+    ) -> Result<Vec<TopicNotificationSummary>, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        #[derive(Debug, Clone, SurrealValue)]
+        struct Row {
+            topic_id: Option<i64>,
+            subject: Option<String>,
+            board_id: Option<i64>,
+            board_name: Option<String>,
+        }
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT topic_id,
+                               (SELECT VALUE subject FROM topics WHERE meta::id(id) = type::thing("topics", string::from(topic_id)) LIMIT 1)[0] AS subject,
+                               <int>(SELECT VALUE math::sum([board_id]) FROM topics WHERE meta::id(id) = type::thing("topics", string::from(topic_id)) LIMIT 1)[0] AS board_id,
+                               (SELECT VALUE name FROM boards WHERE meta::id(id) = type::thing("boards", string::from((SELECT VALUE math::sum([board_id]) FROM topics WHERE meta::id(id) = type::thing("topics", string::from(topic_id)) LIMIT 1)[0])) LIMIT 1)[0] AS board_name
+                        FROM topic_notifications
+                        WHERE member_id = $member_id
+                        ORDER BY topic_id ASC;
+                        "#,
+                    )
+                    .bind(("member_id", member_id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let rows: Vec<Row> = response.take(0).unwrap_or_default();
+        Ok(rows
+            .into_iter()
+            .map(|row| TopicNotificationSummary {
+                id: row.topic_id.unwrap_or_default(),
+                subject: row.subject.unwrap_or_else(|| "(no subject)".into()),
+                board_id: row.board_id.unwrap_or_default(),
+                board_name: row.board_name.unwrap_or_else(|| "Unknown".into()),
+            })
+            .collect())
+    }
+
+    fn remove_board_notifications(&self, member_id: i64, boards: &[i64]) -> Result<(), ForumError> {
+        for board_id in boards {
+            self.remove_board_notification(member_id, *board_id)?;
+        }
+        Ok(())
+    }
+
+    fn remove_topic_notifications(&self, member_id: i64, topics: &[i64]) -> Result<(), ForumError> {
+        for topic_id in topics {
+            self.remove_topic_notification(member_id, *topic_id)?;
+        }
+        Ok(())
     }
 
     fn can_link_event(&self, _user_id: i64) -> Result<bool, ForumError> {
@@ -1518,7 +1807,8 @@ impl ForumService for SurrealService {
         let mut response = match rt.block_on(async { self.client.query(query).await }) {
             Ok(response) => response,
             Err(err) if Self::is_surreal_unauthorized(&err) => {
-                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await }) {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
                     tracing::warn!(error = %reauth_err, "list_board_access reauth failed, trying reconnect");
                 }
                 match rt.block_on(async { self.client.query(query).await }) {
@@ -2206,6 +2496,12 @@ impl ForumService for SurrealService {
         Ok(row.and_then(|c| c.total).unwrap_or(0))
     }
 
+    fn repair_pm_data(&self) -> Result<usize, ForumError> {
+        // Surreal-backed PM data is append-only enough for current develop baseline;
+        // keep this as a safe no-op until a dedicated repair flow is implemented.
+        Ok(0)
+    }
+
     fn log_action(
         &self,
         _action: &str,
@@ -2587,19 +2883,18 @@ impl ForumService for SurrealService {
                         })
                         .map_err(|e| ForumError::Internal(e.to_string()))?;
                     retry_resp
-                }
-                else {
+                } else {
                     rt.block_on(async {
-                    self.client
-                        .query(
-                            r#"
+                        self.client
+                            .query(
+                                r#"
                             SELECT labels, is_read
                             FROM personal_messages
                             WHERE owner_id = $owner_id;
                             "#,
-                        )
-                        .bind(("owner_id", _user_id))
-                        .await
+                            )
+                            .bind(("owner_id", _user_id))
+                            .await
                     })
                     .map_err(|e| ForumError::Internal(e.to_string()))?
                 }
@@ -2714,21 +3009,20 @@ impl ForumService for SurrealService {
                         query.await
                     })
                     .map_err(|e| ForumError::Internal(e.to_string()))?
-                }
-                else {
+                } else {
                     rt.block_on(async {
-                    let mut query = self.client.query(base_query.clone());
-                    query = query
-                        .bind(("owner_id", _user_id))
-                        .bind(("folder", folder))
-                        .bind(("limit", _limit as i64))
-                        .bind(("start", _start as i64));
-                    if let Some(label) = _label {
-                        if label >= 0 {
-                            query = query.bind(("label", label));
+                        let mut query = self.client.query(base_query.clone());
+                        query = query
+                            .bind(("owner_id", _user_id))
+                            .bind(("folder", folder))
+                            .bind(("limit", _limit as i64))
+                            .bind(("start", _start as i64));
+                        if let Some(label) = _label {
+                            if label >= 0 {
+                                query = query.bind(("label", label));
+                            }
                         }
-                    }
-                    query.await
+                        query.await
                     })
                     .map_err(|e| ForumError::Internal(e.to_string()))?
                 }
@@ -2809,17 +3103,16 @@ impl ForumService for SurrealService {
                         query.await
                     })
                     .map_err(|e| ForumError::Internal(e.to_string()))?
-                }
-                else {
+                } else {
                     rt.block_on(async {
-                    let mut query = self.client.query(count_query.clone());
-                    query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
-                    if let Some(label) = _label {
-                        if label >= 0 {
-                            query = query.bind(("label", label));
+                        let mut query = self.client.query(count_query.clone());
+                        query = query.bind(("owner_id", _user_id)).bind(("folder", folder));
+                        if let Some(label) = _label {
+                            if label >= 0 {
+                                query = query.bind(("label", label));
+                            }
                         }
-                    }
-                    query.await
+                        query.await
                     })
                     .map_err(|e| ForumError::Internal(e.to_string()))?
                 }
@@ -3341,5 +3634,120 @@ impl ForumService for SurrealService {
             })
             .collect();
         Ok(filtered)
+    }
+
+    fn list_mentions(
+        &self,
+        content_type: &str,
+        content_id: i64,
+    ) -> Result<Vec<MentionRecord>, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        #[derive(Debug, Clone, SurrealValue)]
+        struct Row {
+            id: Option<String>,
+            content_type: Option<String>,
+            content_id: Option<i64>,
+            author_id: Option<i64>,
+            mentioned_id: Option<i64>,
+            time_ms: Option<i64>,
+        }
+        let mut response = rt
+            .block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        SELECT meta::id(id) AS id, content_type, content_id, author_id, mentioned_id, time_ms
+                        FROM mentions
+                        WHERE content_type = $content_type AND content_id = $content_id
+                        ORDER BY time_ms ASC;
+                        "#,
+                    )
+                    .bind(("content_type", content_type.to_string()))
+                    .bind(("content_id", content_id))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        let rows: Vec<Row> = response.take(0).unwrap_or_default();
+        Ok(rows
+            .into_iter()
+            .map(|row| MentionRecord {
+                id: row
+                    .id
+                    .as_deref()
+                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.parse().ok())
+                    .unwrap_or_default(),
+                content_type: row.content_type.unwrap_or_else(|| content_type.to_string()),
+                content_id: row.content_id.unwrap_or(content_id),
+                author_id: row.author_id.unwrap_or_default(),
+                mentioned_id: row.mentioned_id.unwrap_or_default(),
+                time: row
+                    .time_ms
+                    .and_then(|ms| Utc.timestamp_millis_opt(ms).single())
+                    .unwrap_or_else(Utc::now),
+            })
+            .collect())
+    }
+
+    fn insert_mentions(&self, records: &[MentionRecord]) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        for record in records {
+            let mention_id = if record.id > 0 {
+                record.id
+            } else {
+                Utc::now().timestamp_millis()
+            };
+            rt.block_on(async {
+                self.client
+                    .query(
+                        r#"
+                        UPSERT type::thing("mentions", $id) SET
+                            content_type = $content_type,
+                            content_id = $content_id,
+                            author_id = $author_id,
+                            mentioned_id = $mentioned_id,
+                            time_ms = $time_ms;
+                        "#,
+                    )
+                    .bind(("id", mention_id))
+                    .bind(("content_type", record.content_type.clone()))
+                    .bind(("content_id", record.content_id))
+                    .bind(("author_id", record.author_id))
+                    .bind(("mentioned_id", record.mentioned_id))
+                    .bind(("time_ms", record.time.timestamp_millis()))
+                    .await
+            })
+            .map_err(|e| ForumError::Internal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn delete_mentions(
+        &self,
+        content_type: &str,
+        content_id: i64,
+        member_ids: &[i64],
+    ) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        rt.block_on(async {
+            self.client
+                .query(
+                    r#"
+                    DELETE mentions
+                    WHERE content_type = $content_type
+                      AND content_id = $content_id
+                      AND mentioned_id INSIDE $member_ids;
+                    "#,
+                )
+                .bind(("content_type", content_type.to_string()))
+                .bind(("content_id", content_id))
+                .bind(("member_ids", member_ids.to_vec()))
+                .await
+        })
+        .map_err(|e| ForumError::Internal(e.to_string()))?;
+        Ok(())
     }
 }
