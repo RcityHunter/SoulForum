@@ -1,4 +1,8 @@
-use axum::{middleware::from_fn, routing::get, Router};
+use axum::{
+    middleware::from_fn,
+    routing::{get, post},
+    Router,
+};
 
 use crate::api::state::AppState;
 
@@ -10,6 +14,8 @@ use super::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/system/health", get(system::health))
-        .route("/topics", get(topic::list))
+        .route("/topics", get(topic::list).post(topic::create))
+        .route("/topics/:topic_id", get(topic::get))
+        .route("/replies", post(topic::create_reply))
         .layer(from_fn(inject_request_id))
 }

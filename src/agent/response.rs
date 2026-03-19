@@ -1,6 +1,6 @@
 use axum::{
     http::{Extensions, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Serialize;
@@ -52,22 +52,18 @@ pub fn request_id_from_extensions(extensions: &Extensions) -> String {
         .unwrap_or_else(generate_request_id)
 }
 
-pub fn ok_response<T>(status: StatusCode, extensions: &Extensions, data: T) -> impl IntoResponse
+pub fn ok_response<T>(status: StatusCode, extensions: &Extensions, data: T) -> Response
 where
     T: Serialize,
 {
     let request_id = request_id_from_extensions(extensions);
-    (status, Json(AgentEnvelope::ok(data, request_id)))
+    (status, Json(AgentEnvelope::ok(data, request_id))).into_response()
 }
 
-pub fn err_response<T>(
-    status: StatusCode,
-    extensions: &Extensions,
-    error: ApiError,
-) -> impl IntoResponse
+pub fn err_response<T>(status: StatusCode, extensions: &Extensions, error: ApiError) -> Response
 where
     T: Serialize,
 {
     let request_id = request_id_from_extensions(extensions);
-    (status, Json(AgentEnvelope::<T>::err(error, request_id)))
+    (status, Json(AgentEnvelope::<T>::err(error, request_id))).into_response()
 }

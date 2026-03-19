@@ -10,7 +10,7 @@ Agent API v1 的第一阶段目标不是一次性重做论坛 API，而是在现
 - 统一响应 envelope
 - 预留 capability / scope / request_id 扩展位
 - 先落一个最小 Agent API 路由骨架，再逐步接业务能力
-- 第一批端点：`/agent/v1/system/health`、`/agent/v1/topics`
+- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
 
 ## 响应 envelope
 
@@ -115,17 +115,174 @@ v1 先收口为以下能力：
 
 - `GET /agent/v1/system/health`
 - `GET /agent/v1/topics?board_id=...`
+- `GET /agent/v1/topics/:topic_id`
+- `POST /agent/v1/topics`
+- `POST /agent/v1/replies`
 
 后续建议按 capability 分段扩展，例如：
 
 - `GET /agent/v1/boards`
-- `GET /agent/v1/topics/:topic_id`
-- `POST /agent/v1/topics`
-- `POST /agent/v1/replies`
 - `GET /agent/v1/notifications`
 - `POST /agent/v1/pm/send`
 - `GET /agent/v1/moderation/bans`
 - `POST /agent/v1/moderation/bans/apply`
+
+## 当前支持的 topics / replies 端点
+
+### `GET /agent/v1/topics?board_id=...`
+
+- Scope: `forum:topic:read`
+- Legacy permission fallback: `manage_boards` / `post_new` / `post_reply_any`
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "topics": [
+      {
+        "id": "topics:abc",
+        "board_id": "boards:general",
+        "subject": "Hello",
+        "author": "alice@example.com",
+        "created_at": "2026-03-19T01:02:03Z",
+        "updated_at": "2026-03-19T01:02:03Z"
+      }
+    ],
+    "next_cursor": null
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-3"
+}
+```
+
+### `GET /agent/v1/topics/:topic_id`
+
+- Scope: `forum:topic:read`
+- Legacy permission fallback: `manage_boards` / `post_new` / `post_reply_any`
+- 返回主题元数据与当前主题下的帖子列表：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "topic": {
+      "id": "topics:abc",
+      "board_id": "boards:general",
+      "subject": "Hello",
+      "author": "alice@example.com",
+      "created_at": "2026-03-19T01:02:03Z",
+      "updated_at": "2026-03-19T01:02:03Z"
+    },
+    "posts": [
+      {
+        "id": "posts:first",
+        "topic_id": "topics:abc",
+        "board_id": "boards:general",
+        "subject": "Hello",
+        "body": "first post",
+        "author": "alice@example.com",
+        "created_at": "2026-03-19T01:02:03Z"
+      }
+    ]
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-4"
+}
+```
+
+未找到主题时返回 `404 not_found`，并在 `error.details.topic_id` 回传请求的 topic id。
+
+### `POST /agent/v1/topics`
+
+- Scope: `forum:topic:write`
+- Legacy permission fallback: `manage_boards` / `post_new`
+- 请求体：
+
+```json
+{
+  "board_id": "boards:general",
+  "subject": "Hello",
+  "body": "first post"
+}
+```
+
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "topic": {
+      "id": "topics:abc",
+      "board_id": "boards:general",
+      "subject": "Hello",
+      "author": "alice@example.com",
+      "created_at": "2026-03-19T01:02:03Z",
+      "updated_at": "2026-03-19T01:02:03Z"
+    },
+    "first_post": {
+      "id": "posts:first",
+      "topic_id": "topics:abc",
+      "board_id": "boards:general",
+      "subject": "Hello",
+      "body": "first post",
+      "author": "alice@example.com",
+      "created_at": "2026-03-19T01:02:03Z"
+    }
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-5"
+}
+```
+
+实现细节：
+
+- 仍复用既有创建链路：先建 topic，再落首帖
+- 复用既有 board access 校验与基础内容校验
+- 对 agent 调用做独立速率限制键：`agent:topic:create:<claims.sub>`
+
+### `POST /agent/v1/replies`
+
+- Scope: `forum:reply:write`
+- Legacy permission fallback: `manage_boards` / `post_reply_any`
+- 请求体：
+
+```json
+{
+  "topic_id": "topics:abc",
+  "board_id": "boards:general",
+  "subject": "Re: Hello",
+  "body": "reply body"
+}
+```
+
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "post": {
+      "id": "posts:reply1",
+      "topic_id": "topics:abc",
+      "board_id": "boards:general",
+      "subject": "Re: Hello",
+      "body": "reply body",
+      "author": "bob@example.com",
+      "created_at": "2026-03-19T01:03:03Z"
+    }
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-6"
+}
+```
+
+实现细节：
+
+- 服务端先按 `topic_id` 读取主题，再校验 `board_id` 是否匹配，避免客户端把回复写到错误板块上下文
+- `subject` 允许省略；省略或空白时默认生成为 `Re: <topic.subject>`
+- 对 agent 调用做独立速率限制键：`agent:reply:create:<claims.sub>`
 
 ## 第一阶段实现说明
 
@@ -137,8 +294,9 @@ v1 先收口为以下能力：
 - `src/agent/request_id.rs`: request_id 生成与注入中间件
 - `src/agent/response.rs`: 统一 envelope 与响应拼装 helper
 - `src/agent/handlers/system.rs`: `system.health` handler
-- `src/agent/handlers/topic.rs`: `topic.list` handler
-- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/topics`
+- `src/agent/handlers/topic.rs`: `topic.list` / `topic.get` / `topic.create` / `reply.create` handler
+- `src/surreal.rs`: 最小 topic 读取 primitive
+- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
 
 这样做的目的：
 
@@ -148,7 +306,7 @@ v1 先收口为以下能力：
 
 ## 后续建议
 
-1. 将 `topic.get` / `topic.create` 优先接入 Agent API
+1. 补 `GET /agent/v1/boards` 与通知 / 私信端点，继续按 capability 逐个接入
 2. 为 `moderation.ban.apply` 增加审计记录、操作者标识与 dry-run 机制
 3. 给 request_id 注入 tracing span，串联日志与外部调用链
 4. 把 capability/scope 注册从常量清单推进到统一注册表
