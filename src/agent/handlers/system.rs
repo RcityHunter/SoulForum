@@ -3,9 +3,9 @@ use tracing::error;
 
 use btc_forum_shared::{ApiError, ErrorCode, HealthResponse, HealthSurrealStatus};
 
-use crate::api::state::AppState;
 use crate::agent::request_id::RequestId;
 use crate::agent::response::{err_response, ok_response};
+use crate::api::state::AppState;
 
 pub async fn health(
     State(state): State<AppState>,
