@@ -9,6 +9,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use tracing::debug;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -35,9 +36,20 @@ pub async fn inject_request_id(mut req: Request<Body>, next: Next) -> Response {
         .map(|value| value.to_string())
         .unwrap_or_else(generate_request_id);
 
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+
     req.extensions_mut().insert(RequestId(request_id.clone()));
 
+    debug!(request_id = %request_id, %method, %path, "agent request started");
     let mut response = next.run(req).await;
+    debug!(
+        request_id = %request_id,
+        %method,
+        %path,
+        status = %response.status(),
+        "agent request completed"
+    );
     if let Ok(value) = HeaderValue::from_str(&request_id) {
         response.headers_mut().insert("x-request-id", value);
     }

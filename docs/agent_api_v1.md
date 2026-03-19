@@ -10,7 +10,7 @@ Agent API v1 的第一阶段目标不是一次性重做论坛 API，而是在现
 - 统一响应 envelope
 - 预留 capability / scope / request_id 扩展位
 - 先落一个最小 Agent API 路由骨架，再逐步接业务能力
-- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
+- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/boards`、`GET /agent/v1/notifications`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
 
 ## 响应 envelope
 
@@ -114,6 +114,8 @@ v1 先收口为以下能力：
 第一阶段落地：
 
 - `GET /agent/v1/system/health`
+- `GET /agent/v1/boards`
+- `GET /agent/v1/notifications`
 - `GET /agent/v1/topics?board_id=...`
 - `GET /agent/v1/topics/:topic_id`
 - `POST /agent/v1/topics`
@@ -121,13 +123,64 @@ v1 先收口为以下能力：
 
 后续建议按 capability 分段扩展，例如：
 
-- `GET /agent/v1/boards`
-- `GET /agent/v1/notifications`
 - `POST /agent/v1/pm/send`
 - `GET /agent/v1/moderation/bans`
 - `POST /agent/v1/moderation/bans/apply`
 
-## 当前支持的 topics / replies 端点
+## 当前支持的 boards / notifications / topics / replies 端点
+
+### `GET /agent/v1/boards`
+
+- Scope: `forum:board:read`
+- Legacy permission fallback: `manage_boards` / `post_new` / `post_reply_any`
+- 返回当前调用者可见的板块列表；仍复用现有 board access 规则过滤不可见板块
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "boards": [
+      {
+        "id": "boards:general",
+        "name": "General",
+        "description": "General discussion",
+        "created_at": "2026-03-19T01:00:00Z",
+        "updated_at": null
+      }
+    ]
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-3"
+}
+```
+
+### `GET /agent/v1/notifications`
+
+- Scope: `forum:notification:read`
+- Legacy permission fallback: `manage_boards` / `post_new` / `post_reply_any`
+- 返回当前调用者自己的通知列表
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "notifications:1",
+        "user": "alice@example.com",
+        "subject": "Mentioned in topic",
+        "body": "bob replied to your topic",
+        "created_at": "2026-03-19T01:01:00Z",
+        "is_read": false
+      }
+    ]
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-4"
+}
+```
 
 ### `GET /agent/v1/topics?board_id=...`
 
@@ -152,7 +205,7 @@ v1 先收口为以下能力：
     "next_cursor": null
   },
   "error": null,
-  "request_id": "agv1-1742350000000-3"
+  "request_id": "agv1-1742350000000-5"
 }
 ```
 
@@ -187,7 +240,7 @@ v1 先收口为以下能力：
     ]
   },
   "error": null,
-  "request_id": "agv1-1742350000000-4"
+  "request_id": "agv1-1742350000000-6"
 }
 ```
 
@@ -291,12 +344,14 @@ v1 先收口为以下能力：
 - `src/agent/router.rs`: Agent API 独立路由入口
 - `src/agent/capability.rs`: capability 常量
 - `src/agent/auth.rs`: 最小 scope/权限执行位
-- `src/agent/request_id.rs`: request_id 生成与注入中间件
+- `src/agent/request_id.rs`: request_id 生成与注入中间件，并把 request_id/method/path/status 前推到 agent 路由日志
 - `src/agent/response.rs`: 统一 envelope 与响应拼装 helper
 - `src/agent/handlers/system.rs`: `system.health` handler
+- `src/agent/handlers/board.rs`: `board.list` handler
+- `src/agent/handlers/notification.rs`: `notification.list` handler
 - `src/agent/handlers/topic.rs`: `topic.list` / `topic.get` / `topic.create` / `reply.create` handler
-- `src/surreal.rs`: 最小 topic 读取 primitive
-- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
+- `src/surreal.rs`: 复用既有 board / notification / topic 读取 primitive
+- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/boards`、`/agent/v1/notifications`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
 
 这样做的目的：
 
