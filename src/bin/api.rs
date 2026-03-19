@@ -21,6 +21,10 @@ use tower_http::cors::CorsLayer;
 
 #[path = "../api/mod.rs"]
 mod api;
+#[path = "../agent/mod.rs"]
+mod agent;
+
+use agent::router::router as agent_router;
 
 use api::admin_routes::{
     admin_notify, apply_ban, assign_moderator, assign_moderator_by_record, get_board_access,
@@ -263,6 +267,7 @@ async fn main() {
     };
     let app = Router::new()
         .route("/health", get(health))
+        .nest("/agent/v1", agent_router())
         .route("/metrics", get(metrics))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
