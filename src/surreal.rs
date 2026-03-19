@@ -5,12 +5,12 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use surrealdb_types::SurrealValue;
 use surrealdb::{
     engine::remote::http::{Client, Http},
     opt::auth::Root,
     Surreal,
 };
+use surrealdb_types::SurrealValue;
 use tracing::{info, warn};
 
 pub type SurrealClient = Surreal<Client>;
@@ -51,7 +51,11 @@ fn env_non_empty(key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-async fn rpc_signin_token(endpoint: &str, user: &str, pass: &str) -> Result<String, surrealdb::Error> {
+async fn rpc_signin_token(
+    endpoint: &str,
+    user: &str,
+    pass: &str,
+) -> Result<String, surrealdb::Error> {
     let rpc_url = format!("{}/rpc", endpoint.trim_end_matches('/'));
     let payload = serde_json::json!({
         "id": 1,
@@ -69,13 +73,13 @@ async fn rpc_signin_token(endpoint: &str, user: &str, pass: &str) -> Result<Stri
         .await
         .map_err(|e| surrealdb::Error::thrown(format!("surreal rpc signin request failed: {e}")))?;
 
-    let text = response
-        .text()
-        .await
-        .map_err(|e| surrealdb::Error::thrown(format!("surreal rpc signin response read failed: {e}")))?;
+    let text = response.text().await.map_err(|e| {
+        surrealdb::Error::thrown(format!("surreal rpc signin response read failed: {e}"))
+    })?;
 
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| surrealdb::Error::thrown(format!("surreal rpc signin invalid json: {e}; body={text}")))?;
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        surrealdb::Error::thrown(format!("surreal rpc signin invalid json: {e}; body={text}"))
+    })?;
 
     if let Some(token) = value.get("result").and_then(|v| v.as_str()) {
         return Ok(token.to_string());
@@ -114,10 +118,30 @@ pub async fn reauth_from_env(client: &SurrealClient) -> Result<(), surrealdb::Er
     // Try a few credential/context combinations to survive env drift.
     let mut tried = HashSet::new();
     let candidates = vec![
-        (env_user.clone(), env_pass.clone(), env_ns.clone(), env_db.clone()),
-        ("root".to_string(), "root".to_string(), env_ns.clone(), env_db.clone()),
-        ("root".to_string(), "root".to_string(), "forum".to_string(), "main".to_string()),
-        ("root".to_string(), "root".to_string(), "auth".to_string(), "main".to_string()),
+        (
+            env_user.clone(),
+            env_pass.clone(),
+            env_ns.clone(),
+            env_db.clone(),
+        ),
+        (
+            "root".to_string(),
+            "root".to_string(),
+            env_ns.clone(),
+            env_db.clone(),
+        ),
+        (
+            "root".to_string(),
+            "root".to_string(),
+            "forum".to_string(),
+            "main".to_string(),
+        ),
+        (
+            "root".to_string(),
+            "root".to_string(),
+            "auth".to_string(),
+            "main".to_string(),
+        ),
     ];
 
     let mut last_err: Option<surrealdb::Error> = None;
@@ -611,6 +635,28 @@ pub async fn list_topics(
     Ok(topics)
 }
 
+pub async fn get_topic(
+    client: &SurrealClient,
+    topic_id: &str,
+) -> Result<Option<SurrealTopic>, surrealdb::Error> {
+    let topic_id = topic_id.to_owned();
+    let mut response = client
+        .query(
+            r#"
+            SELECT meta::id(id) as id, board_id, subject, author,
+                   <string>created_at as created_at,
+                   <string>updated_at as updated_at
+            FROM topics
+            WHERE meta::id(id) = $topic_id
+            LIMIT 1;
+            "#,
+        )
+        .bind(("topic_id", topic_id))
+        .await?;
+    let topic: Option<SurrealTopic> = response.take(0)?;
+    Ok(topic)
+}
+
 pub async fn create_post_in_topic(
     client: &SurrealClient,
     topic_id: &str,
@@ -897,8 +943,7 @@ impl SurrealForumService {
         match create_board(&self.client, name, description).await {
             Ok(board) => Ok(board),
             Err(err)
-                if is_surreal_unauthorized(&err)
-                    || is_surreal_connection_uninitialised(&err) =>
+                if is_surreal_unauthorized(&err) || is_surreal_connection_uninitialised(&err) =>
             {
                 warn!(
                     error = %err,
@@ -958,8 +1003,7 @@ impl SurrealForumService {
         match create_topic(&self.client, board_id, subject, author).await {
             Ok(topic) => Ok(topic),
             Err(err)
-                if is_surreal_unauthorized(&err)
-                    || is_surreal_connection_uninitialised(&err) =>
+                if is_surreal_unauthorized(&err) || is_surreal_connection_uninitialised(&err) =>
             {
                 warn!(
                     error = %err,
@@ -1012,6 +1056,31 @@ impl SurrealForumService {
         }
     }
 
+    pub async fn get_topic(
+        &self,
+        topic_id: &str,
+    ) -> Result<Option<SurrealTopic>, surrealdb::Error> {
+        match get_topic(&self.client, topic_id).await {
+            Ok(topic) => Ok(topic),
+            Err(err) if is_surreal_unauthorized(&err) => {
+                warn!(error = %err, topic_id = %topic_id, "get_topic unauthorized, trying reauth");
+                if let Err(reauth_err) = reauth_from_env(&self.client).await {
+                    warn!(error = %reauth_err, topic_id = %topic_id, "get_topic reauth failed, trying reconnect");
+                }
+                match get_topic(&self.client, topic_id).await {
+                    Ok(topic) => Ok(topic),
+                    Err(retry_err) if is_surreal_unauthorized(&retry_err) => {
+                        warn!(error = %retry_err, topic_id = %topic_id, "get_topic still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = connect_from_env().await?;
+                        get_topic(&fresh, topic_id).await
+                    }
+                    Err(retry_err) => Err(retry_err),
+                }
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     pub async fn create_post(
         &self,
         subject: &str,
@@ -1032,8 +1101,7 @@ impl SurrealForumService {
         match create_post_in_topic(&self.client, topic_id, board_id, subject, body, author).await {
             Ok(post) => Ok(post),
             Err(err)
-                if is_surreal_unauthorized(&err)
-                    || is_surreal_connection_uninitialised(&err) =>
+                if is_surreal_unauthorized(&err) || is_surreal_connection_uninitialised(&err) =>
             {
                 warn!(
                     error = %err,
@@ -1049,7 +1117,9 @@ impl SurrealForumService {
                         "create_post_in_topic reauth failed, trying reconnect"
                     );
                 }
-                match create_post_in_topic(&self.client, topic_id, board_id, subject, body, author).await {
+                match create_post_in_topic(&self.client, topic_id, board_id, subject, body, author)
+                    .await
+                {
                     Ok(post) => Ok(post),
                     Err(retry_err)
                         if is_surreal_unauthorized(&retry_err)
@@ -1062,7 +1132,8 @@ impl SurrealForumService {
                             "create_post_in_topic still failing after reauth, rebuilding surreal client"
                         );
                         let fresh = connect_from_env().await?;
-                        create_post_in_topic(&fresh, topic_id, board_id, subject, body, author).await
+                        create_post_in_topic(&fresh, topic_id, board_id, subject, body, author)
+                            .await
                     }
                     Err(retry_err) => Err(retry_err),
                 }
