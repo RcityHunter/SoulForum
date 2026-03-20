@@ -35,7 +35,10 @@ struct PostRow {
 
 impl PostRow {
     fn topic_id_numeric(&self) -> Option<i64> {
-        self.topic_id.split(':').last().and_then(|s| s.parse().ok())
+        self.topic_id
+            .split(':')
+            .next_back()
+            .and_then(|s| s.parse().ok())
     }
 }
 
@@ -298,19 +301,19 @@ impl ForumService for SurrealService {
             board_id: topic
                 .board_id
                 .as_deref()
-                .and_then(|id| id.split(':').last())
+                .and_then(|id| id.split(':').next_back())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
             poll_id: None,
             last_msg_id: last
                 .as_ref()
                 .and_then(|m| m.id.as_deref())
-                .and_then(|id| id.split(':').last())
+                .and_then(|id| id.split(':').next_back())
                 .and_then(|s| s.parse().ok()),
             first_msg_id: first
                 .as_ref()
                 .and_then(|m| m.id.as_deref())
-                .and_then(|id| id.split(':').last())
+                .and_then(|id| id.split(':').next_back())
                 .and_then(|s| s.parse().ok()),
             id_member_started: 0,
             subject: topic.subject,
@@ -393,11 +396,11 @@ impl ForumService for SurrealService {
 
         let message_id = post
             .id
-            .and_then(|id| id.split(':').last().and_then(|s| s.parse().ok()))
+            .and_then(|id| id.split(':').next_back().and_then(|s| s.parse().ok()))
             .unwrap_or(0);
         let topic_numeric = topic_id
             .split(':')
-            .last()
+            .next_back()
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
@@ -1178,7 +1181,7 @@ impl ForumService for SurrealService {
                 id: p
                     .id
                     .as_deref()
-                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.split(':').next_back())
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0),
                 topic_id,
@@ -1288,7 +1291,7 @@ impl ForumService for SurrealService {
                 )
                 .bind(("name", _group.name.clone()))
                 .bind(("description", _group.description.clone()))
-                .bind(("type", _group.group_type.clone()))
+                .bind(("type", _group.group_type))
                 .bind(("id", id))
                 .await
         })
@@ -1668,7 +1671,7 @@ impl ForumService for SurrealService {
             id: row
                 .id
                 .as_deref()
-                .and_then(|id| id.split(':').last())
+                .and_then(|id| id.split(':').next_back())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(_member_id),
             name: row.name,
@@ -1764,7 +1767,7 @@ impl ForumService for SurrealService {
                 let mut id = row
                     .id
                     .as_deref()
-                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.split(':').next_back())
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
                 if id == 0 {
@@ -2565,7 +2568,7 @@ impl ForumService for SurrealService {
                 id: r
                     .id
                     .as_deref()
-                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.split(':').next_back())
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0),
                 action: r.action.unwrap_or_default(),
@@ -2868,7 +2871,7 @@ impl ForumService for SurrealService {
                             reauth_err, connect_err
                         ))
                     })?;
-                    let mut retry_resp = rt
+                    let retry_resp = rt
                         .block_on(async {
                             fresh
                                 .query(
@@ -3675,7 +3678,7 @@ impl ForumService for SurrealService {
                 id: row
                     .id
                     .as_deref()
-                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.split(':').next_back())
                     .and_then(|id| id.parse().ok())
                     .unwrap_or_default(),
                 content_type: row.content_type.unwrap_or_else(|| content_type.to_string()),
