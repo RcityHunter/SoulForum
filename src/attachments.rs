@@ -3,7 +3,7 @@ use crate::services::{
 };
 use serde_json::json;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AttachmentLimits {
     pub per_file_bytes: Option<i64>,
     pub per_post_bytes: Option<i64>,
@@ -11,19 +11,6 @@ pub struct AttachmentLimits {
     pub dir_size_bytes: Option<i64>,
     pub dir_file_count: Option<i64>,
     pub allowed_extensions: Vec<String>,
-}
-
-impl Default for AttachmentLimits {
-    fn default() -> Self {
-        Self {
-            per_file_bytes: None,
-            per_post_bytes: None,
-            per_post_files: None,
-            dir_size_bytes: None,
-            dir_file_count: None,
-            allowed_extensions: Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -93,7 +80,7 @@ fn enforce_extension(upload: &AttachmentUpload, limits: &AttachmentLimits) -> Se
         return Ok(());
     }
 
-    if let Some(ext) = upload.name.split('.').last() {
+    if let Some(ext) = upload.name.split('.').next_back() {
         if limits
             .allowed_extensions
             .iter()
