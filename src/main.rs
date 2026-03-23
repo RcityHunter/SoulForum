@@ -13,9 +13,11 @@ fn main() {
     let post_controller = PostController::new(service.clone());
     let pm_controller = PersonalMessageController::new(service.clone());
 
-    let mut ctx = ForumContext::default();
-    ctx.board_id = Some(1);
-    ctx.topic_id = Some(1);
+    let mut ctx = ForumContext {
+        board_id: Some(1),
+        topic_id: Some(1),
+        ..ForumContext::default()
+    };
     ctx.user_info.is_guest = false;
     ctx.user_info.permissions.insert("post_new".into());
     ctx.post_vars.set("subject", "CLI example");

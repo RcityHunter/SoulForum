@@ -13,7 +13,7 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 /// JWT Claims expected from Rainbow-Auth tokens.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthClaims {
     pub sub: String,
     pub exp: i64,
@@ -23,20 +23,6 @@ pub struct AuthClaims {
     pub session_id: Option<String>,
     #[serde(default, skip)]
     pub token: Option<String>,
-}
-
-impl Default for AuthClaims {
-    fn default() -> Self {
-        Self {
-            sub: String::new(),
-            exp: 0,
-            iat: 0,
-            role: None,
-            permissions: None,
-            session_id: None,
-            token: None,
-        }
-    }
 }
 
 /// Rejection type returned when auth fails.
