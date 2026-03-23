@@ -117,7 +117,7 @@ pub fn get_groups_with_permissions<S: ForumService>(
 }
 
 fn normalize_group_list(groups: &[i64], ignore_protected: bool, is_admin: bool) -> Vec<i64> {
-    let mut cleaned: Vec<i64> = groups.iter().copied().collect();
+    let mut cleaned = groups.to_vec();
     cleaned.sort_unstable();
     cleaned.dedup();
     if ignore_protected || is_admin {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const BOARD_LIST: &str = "board.list";
 pub const TOPIC_LIST: &str = "topic.list";
 pub const TOPIC_GET: &str = "topic.get";

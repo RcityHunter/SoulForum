@@ -45,7 +45,7 @@ pub(crate) async fn create_notification(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -139,7 +139,7 @@ pub(crate) async fn list_notifications(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
-    if let Err(resp) = ensure_user_ctx(&state, &claims).await.map(|_| ()) {
+    if let Err(resp) = ensure_user_ctx(&state, claims).await.map(|_| ()) {
         return resp.into_response();
     }
     let target = claims.sub.clone();
