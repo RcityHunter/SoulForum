@@ -228,12 +228,12 @@ mod tests {
                 reason: Some("banned email".into()),
                 expires_at: None,
                 affects: crate::services::BanAffects::Email {
-                    value: "blocked@example.com".into(),
+                    value: "banned@example.com".into(),
                 },
             }],
         });
         let mut ctx = ForumContext::default();
-        ctx.user_info.email = "blocked@example.com".into();
+        ctx.user_info.email = "banned@example.com".into();
         let result = is_not_banned(&service, &mut ctx, true);
         assert!(result.is_err());
     }
