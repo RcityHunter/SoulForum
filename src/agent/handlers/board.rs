@@ -173,6 +173,7 @@ mod tests {
     fn board_visible_respects_allowed_groups() {
         let rules = vec![BoardAccessEntry {
             id: "boards:general".into(),
+            name: "General".into(),
             allowed_groups: vec![2],
         }];
 
