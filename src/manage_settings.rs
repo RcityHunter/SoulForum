@@ -1,20 +1,10 @@
 use crate::services::{ForumContext, ServiceResult};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct PmSpamSettings {
     pub max_recipients: i64,
     pub verification_posts: i64,
     pub per_hour: i64,
-}
-
-impl Default for PmSpamSettings {
-    fn default() -> Self {
-        Self {
-            max_recipients: 0,
-            verification_posts: 0,
-            per_hour: 0,
-        }
-    }
 }
 
 pub fn save_pm_spam_settings(

@@ -507,7 +507,7 @@ fn folder_from_request(ctx: &ForumContext) -> PersonalMessageFolder {
 fn parse_name_list(value: Option<String>) -> Vec<String> {
     value
         .unwrap_or_default()
-        .split(|c: char| c == ',' || c == ';')
+        .split([',', ';'])
         .map(|part| part.trim().to_string())
         .filter(|part| !part.is_empty())
         .collect()
@@ -529,7 +529,7 @@ fn parse_id_list(ctx: &ForumContext, key: &str) -> Vec<i64> {
 fn parse_list(value: Option<String>) -> Vec<i64> {
     value
         .unwrap_or_default()
-        .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+        .split([',', ';', ' '])
         .filter_map(|part| part.trim().parse::<i64>().ok())
         .collect()
 }
@@ -541,11 +541,11 @@ struct PmFormState {
     _store_outbox: bool,
 }
 
-impl ToString for PersonalMessageFolder {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for PersonalMessageFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PersonalMessageFolder::Inbox => "inbox".into(),
-            PersonalMessageFolder::Sent => "sent".into(),
+            PersonalMessageFolder::Inbox => write!(f, "inbox"),
+            PersonalMessageFolder::Sent => write!(f, "sent"),
         }
     }
 }

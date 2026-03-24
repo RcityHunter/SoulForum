@@ -151,9 +151,7 @@ impl<S: ForumService + Clone> ProfileActions<S> {
 }
 
 fn ensure_can_edit(ctx: &ForumContext, member_id: i64) -> ServiceResult<()> {
-    if ctx.user_info.id == member_id {
-        Ok(())
-    } else if ctx.user_info.permissions.contains("profile_extra_any") {
+    if ctx.user_info.id == member_id || ctx.user_info.permissions.contains("profile_extra_any") {
         Ok(())
     } else {
         Err(ForumError::PermissionDenied("profile_extra".into()))

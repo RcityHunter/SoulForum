@@ -122,10 +122,8 @@ pub fn create_control_verification(
         });
     }
 
-    if do_test {
-        if ctx.session.bool("captcha_fail") {
-            return Err(ForumError::Validation("captcha_failed".into()));
-        }
+    if do_test && ctx.session.bool("captcha_failed") {
+        return Err(ForumError::Validation("captcha_failed".into()));
     }
 
     let key = format!("verification_{}", options.id);

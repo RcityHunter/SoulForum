@@ -40,17 +40,12 @@ pub struct AlertChannelPreference {
     pub allowed: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AlertChannel {
+    #[default]
     Alert,
     Email,
     Push,
-}
-
-impl Default for AlertChannel {
-    fn default() -> Self {
-        AlertChannel::Alert
-    }
 }
 
 impl AlertChannel {
@@ -67,21 +62,20 @@ pub fn render_alert_preferences(page: &AlertPreferencePage) -> String {
     let mut html = String::new();
     writeln!(
         html,
-        "<section class=\"alert-preferences\"><h2>{}</h2><p>{}</p>",
-        "Alert Preferences", page.description
+        "<section class=\"alert-preferences\"><h2>Alert Preferences</h2><p>{}</p>",
+        page.description
     )
     .ok();
 
     if page.show_notify_once {
         writeln!(
             html,
-            "<label><input type=\"checkbox\" name=\"notify_once\" {}>{}",
+            "<label><input type=\"checkbox\" name=\"notify_once\" {}> ",
             if page.notify_once_enabled {
                 "checked"
             } else {
                 ""
-            },
-            " "
+            }
         )
         .ok();
         html.push_str("Notify me only once per topic</label>");
