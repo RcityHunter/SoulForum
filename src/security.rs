@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn load_permissions_populates_set() {
-        let service = InMemoryService::default();
+        let service = InMemoryService::new_with_sample();
         let mut ctx = ForumContext::default();
         ctx.user_info.groups = vec![0];
         load_permissions(&service, &mut ctx, Some("1".into())).unwrap();
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn ban_removes_permissions() {
-        let service = InMemoryService::default();
+        let service = InMemoryService::new_with_sample();
         let mut ctx = ForumContext::default();
         ctx.user_info.groups = vec![0];
         load_permissions(&service, &mut ctx, None).unwrap();
@@ -216,7 +216,22 @@ mod tests {
 
     #[test]
     fn banned_user_is_blocked() {
-        let service = InMemoryService::default();
+        let service = InMemoryService::new_with_sample();
+        let _ = service.save_ban_rule(BanRule {
+            id: 0,
+            reason: Some("test ban".into()),
+            expires_at: None,
+            cannot_post: true,
+            cannot_access: true,
+            conditions: vec![BanCondition {
+                id: 0,
+                reason: Some("banned email".into()),
+                expires_at: None,
+                affects: crate::services::BanAffects::Email {
+                    value: "banned@example.com".into(),
+                },
+            }],
+        });
         let mut ctx = ForumContext::default();
         ctx.user_info.email = "banned@example.com".into();
         let result = is_not_banned(&service, &mut ctx, true);
