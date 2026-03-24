@@ -260,7 +260,7 @@ impl<S: ForumService> MembergroupController<S> {
 
     fn parse_id_list(raw: Option<String>) -> Vec<i64> {
         raw.unwrap_or_default()
-            .split(|c| c == ',' || c == ';')
+            .split([',', ';'])
             .filter_map(|part| part.trim().parse::<i64>().ok())
             .collect()
     }

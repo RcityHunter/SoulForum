@@ -233,7 +233,7 @@ fn load_all_permissions(ctx: &mut ForumContext) -> ServiceResult<()> {
     let mut grouped: HashMap<PermissionScope, BTreeMap<String, Vec<_>>> = HashMap::new();
     for spec in specs
         .into_iter()
-        .filter(|spec| !hidden.iter().any(|item| *item == spec.id.as_str()))
+        .filter(|spec| !hidden.contains(&spec.id.as_str()))
     {
         let label = relabels
             .get(spec.id.as_str())

@@ -131,7 +131,7 @@ pub(crate) fn build_ctx_from_user(user: &SurrealUser, claims: &AuthClaims) -> Fo
     ctx.user_info.name = user.name.clone();
     ctx.user_info.id = user.legacy_id();
 
-    if let Some(role) = user.role.as_deref().or_else(|| claims.role.as_deref()) {
+    if let Some(role) = user.role.as_deref().or(claims.role.as_deref()) {
         match role {
             "admin" => ctx.user_info.is_admin = true,
             "mod" => ctx.user_info.is_mod = true,
