@@ -63,7 +63,7 @@ pub(crate) async fn list_personal_messages(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -81,7 +81,7 @@ pub(crate) async fn list_personal_messages(
     let offset = query.offset.unwrap_or(0);
     let label = query.label;
     match run_forum_blocking(&state, move |forum| {
-        forum.personal_message_page(ctx.user_info.id, folder.clone(), label, offset, limit)
+        forum.personal_message_page(ctx.user_info.id, folder, label, offset, limit)
     })
     .await
     {
@@ -128,7 +128,7 @@ pub(crate) async fn send_personal_message_api(
         return api_error_from_status(StatusCode::BAD_REQUEST, "body must be 1-4000 chars")
             .into_response();
     }
-    let (user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -196,7 +196,7 @@ pub(crate) async fn mark_personal_messages_read(
     if payload.ids.is_empty() {
         return api_error_from_status(StatusCode::BAD_REQUEST, "ids required").into_response();
     }
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -238,7 +238,7 @@ pub(crate) async fn delete_personal_messages_api(
     if payload.ids.is_empty() {
         return api_error_from_status(StatusCode::BAD_REQUEST, "ids required").into_response();
     }
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };

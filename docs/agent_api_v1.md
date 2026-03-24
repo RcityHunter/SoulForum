@@ -10,7 +10,7 @@ Agent API v1 的第一阶段目标不是一次性重做论坛 API，而是在现
 - 统一响应 envelope
 - 预留 capability / scope / request_id 扩展位
 - 先落一个最小 Agent API 路由骨架，再逐步接业务能力
-- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/boards`、`GET /agent/v1/notifications`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
+- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/boards`、`GET /agent/v1/notifications`、`POST /agent/v1/pm/send`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
 
 ## 响应 envelope
 
@@ -116,6 +116,7 @@ v1 先收口为以下能力：
 - `GET /agent/v1/system/health`
 - `GET /agent/v1/boards`
 - `GET /agent/v1/notifications`
+- `POST /agent/v1/pm/send`
 - `GET /agent/v1/topics?board_id=...`
 - `GET /agent/v1/topics/:topic_id`
 - `POST /agent/v1/topics`
@@ -123,11 +124,10 @@ v1 先收口为以下能力：
 
 后续建议按 capability 分段扩展，例如：
 
-- `POST /agent/v1/pm/send`
 - `GET /agent/v1/moderation/bans`
 - `POST /agent/v1/moderation/bans/apply`
 
-## 当前支持的 boards / notifications / topics / replies 端点
+## 当前支持的 boards / notifications / pm / topics / replies 端点
 
 ### `GET /agent/v1/boards`
 
@@ -181,6 +181,49 @@ v1 先收口为以下能力：
   "request_id": "agv1-1742350000000-4"
 }
 ```
+
+### `POST /agent/v1/pm/send`
+
+- Scope: `forum:pm:write`
+- Legacy permission fallback: `manage_boards` / `pm_send`
+- 只允许以当前认证调用者身份发信；请求体不接受 `sender_id`、`sender_name` 或任何额外字段，避免 impersonation / delegated sending
+- 请求体：
+
+```json
+{
+  "to": ["bob@example.com", "2"],
+  "bcc": ["carol@example.com"],
+  "subject": "Hello",
+  "body": "Private message body"
+}
+```
+
+- 返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "message_id": 42,
+    "sent_to": [2, 3],
+    "failed": [
+      {
+        "target": "missing-user",
+        "reason": "unknown_recipient"
+      }
+    ]
+  },
+  "error": null,
+  "request_id": "agv1-1742350000000-7"
+}
+```
+
+实现细节：
+
+- 复用既有 `pm_ops::send_pm` primitive，沿用当前私信收件人解析、每小时发送限制与最大收件人数限制
+- 发件人身份始终取自 `ensure_user_ctx` 构建的当前调用者上下文，不从请求体读取任何 sender 字段
+- 仍要求论坛侧 `pm_send` 权限，并沿用当前封禁态校验
+- `to` 与 `bcc` 可混用，但两者不能同时为空；`subject` 限制为 `1..200` 字符，`body` 限制为 `1..4000` 字符
 
 ### `GET /agent/v1/topics?board_id=...`
 
@@ -349,9 +392,11 @@ v1 先收口为以下能力：
 - `src/agent/handlers/system.rs`: `system.health` handler
 - `src/agent/handlers/board.rs`: `board.list` handler
 - `src/agent/handlers/notification.rs`: `notification.list` handler
+- `src/agent/handlers/pm.rs`: `pm.send` handler
 - `src/agent/handlers/topic.rs`: `topic.list` / `topic.get` / `topic.create` / `reply.create` handler
 - `src/surreal.rs`: 复用既有 board / notification / topic 读取 primitive
-- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/boards`、`/agent/v1/notifications`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
+- `src/pm_ops.rs`: 复用既有私信发送 primitive
+- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/boards`、`/agent/v1/notifications`、`/agent/v1/pm/send`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
 
 这样做的目的：
 
@@ -361,7 +406,7 @@ v1 先收口为以下能力：
 
 ## 后续建议
 
-1. 补 `GET /agent/v1/boards` 与通知 / 私信端点，继续按 capability 逐个接入
+1. 继续按 capability 扩展 moderation 等端点，保持统一 envelope / scope / request_id 模式
 2. 为 `moderation.ban.apply` 增加审计记录、操作者标识与 dry-run 机制
 3. 给 request_id 注入 tracing span，串联日志与外部调用链
 4. 把 capability/scope 注册从常量清单推进到统一注册表

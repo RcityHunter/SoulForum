@@ -346,6 +346,7 @@ async fn persist_user_admin_row_by_name(
     }
 }
 
+#[allow(dead_code)]
 async fn persist_user_admin_row_by_record_id(
     state: &AppState,
     record_id: &str,
@@ -354,7 +355,7 @@ async fn persist_user_admin_row_by_record_id(
     primary_group: Option<i64>,
     additional_groups: Vec<i64>,
 ) -> Result<(), ApiErr> {
-    let rid = normalize_user_record_id(record_id);
+        let _rid = normalize_user_record_id(record_id);
     let rid_key = user_key_from_record_id(record_id);
 
     let full_update = || {
@@ -834,7 +835,7 @@ pub(crate) async fn apply_ban(
         id: 0,
         reason: payload.reason.clone(),
         expires_at: Some(chrono::DateTime::from_timestamp(until, 0).unwrap()),
-        cannot_post: payload.cannot_post || payload.cannot_access || (!payload.cannot_post && !payload.cannot_access),
+        cannot_post: payload.cannot_post || payload.cannot_access,
         cannot_access: payload.cannot_access,
         conditions: vec![BanCondition {
             id: 0,
@@ -988,7 +989,7 @@ pub(crate) async fn assign_moderator(
     }
     let primary_group = row.primary_group;
     let mut additional_groups = dedup_groups(row.additional_groups.unwrap_or_default());
-    if primary_group != Some(2) && !additional_groups.iter().any(|g| *g == 2) {
+    if primary_group != Some(2) && !additional_groups.contains(&2) {
         additional_groups.push(2);
     }
     additional_groups = dedup_groups(additional_groups);
@@ -1327,7 +1328,7 @@ pub(crate) async fn assign_moderator_by_record(
     }
     let primary_group = row.primary_group;
     let mut additional_groups = dedup_groups(row.additional_groups.unwrap_or_default());
-    if primary_group != Some(2) && !additional_groups.iter().any(|g| *g == 2) {
+    if primary_group != Some(2) && !additional_groups.contains(&2) {
         additional_groups.push(2);
     }
     additional_groups = dedup_groups(additional_groups);

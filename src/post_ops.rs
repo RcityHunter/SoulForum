@@ -57,25 +57,13 @@ impl Default for TopicOptions {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PosterOptions {
     pub id: i64,
     pub name: String,
     pub email: String,
     pub ip: String,
     pub update_post_count: bool,
-}
-
-impl Default for PosterOptions {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            name: String::new(),
-            email: String::new(),
-            ip: String::new(),
-            update_post_count: false,
-        }
-    }
 }
 
 pub fn create_post<S: ForumService>(

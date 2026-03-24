@@ -126,7 +126,7 @@ impl<S: ForumService> PostController<S> {
         let editor_value = ctx
             .context
             .string("form_message")
-            .unwrap_or_else(|| String::new());
+            .unwrap_or_default();
         create_control_richedit(
             ctx,
             RichEditOptions {

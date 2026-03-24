@@ -44,7 +44,7 @@ pub(crate) async fn list_attachments(
         Ok(c) => c,
         Err(resp) => return resp.into_response(),
     };
-    if let Err(resp) = ensure_user_ctx(&state, &claims).await.map(|_| ()) {
+    if let Err(resp) = ensure_user_ctx(&state, claims).await.map(|_| ()) {
         return resp.into_response();
     }
     let base_url = upload_base_url();
@@ -80,7 +80,7 @@ pub(crate) async fn create_attachment_meta(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -153,7 +153,7 @@ pub(crate) async fn upload_attachment(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
@@ -312,14 +312,14 @@ pub(crate) async fn delete_attachment_api(
     if let Err(resp) = verify_csrf(&headers) {
         return resp.into_response();
     }
-    let (_user, ctx) = match ensure_user_ctx(&state, &claims).await {
+    let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err(resp) => return resp.into_response(),
     };
     let id_num = payload
         .id
         .split(':')
-        .last()
+        .next_back()
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
     if id_num <= 0 {

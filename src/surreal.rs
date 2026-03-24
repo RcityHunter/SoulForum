@@ -336,7 +336,7 @@ pub async fn create_post(
         .await?;
 
     let created: Option<SurrealPost> = response.take(0)?;
-    Ok(created.unwrap_or_else(|| SurrealPost {
+    Ok(created.unwrap_or(SurrealPost {
         id: None,
         topic_id: None,
         board_id: None,
@@ -551,7 +551,7 @@ pub async fn create_board(
         .await?;
 
     let board: Option<SurrealBoard> = response.take(0)?;
-    Ok(board.unwrap_or_else(|| SurrealBoard {
+    Ok(board.unwrap_or(SurrealBoard {
         id: None,
         name,
         description: description_owned,
@@ -602,7 +602,7 @@ pub async fn create_topic(
         .await?;
 
     let topic: Option<SurrealTopic> = response.take(0)?;
-    Ok(topic.unwrap_or_else(|| SurrealTopic {
+    Ok(topic.unwrap_or(SurrealTopic {
         id: None,
         board_id,
         subject,
@@ -692,7 +692,7 @@ pub async fn create_post_in_topic(
         .await?;
 
     let post: Option<SurrealPost> = response.take(0)?;
-    Ok(post.unwrap_or_else(|| SurrealPost {
+    Ok(post.unwrap_or(SurrealPost {
         id: None,
         topic_id: Some(topic_id),
         board_id: Some(board_id),
@@ -743,7 +743,7 @@ impl SurrealUser {
         if let Some(id) = self
             .id
             .as_deref()
-            .and_then(|rid| rid.split(':').last())
+            .and_then(|rid| rid.split(':').next_back())
             .and_then(|s| s.parse().ok())
         {
             if id != 0 {

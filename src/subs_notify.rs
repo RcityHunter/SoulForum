@@ -45,11 +45,7 @@ pub fn set_notify_prefs<S: ForumService>(
         .iter()
         .map(|(key, value)| {
             let mut val = *value;
-            if val < -128 {
-                val = -128;
-            } else if val > 127 {
-                val = 127;
-            }
+            val = val.clamp(-128, 127);
             (key.clone(), val)
         })
         .collect();
