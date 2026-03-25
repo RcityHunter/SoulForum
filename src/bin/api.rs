@@ -114,6 +114,7 @@ async fn csrf_layer(mut req: Request<Body>, next: Next) -> Response {
     response
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::*;

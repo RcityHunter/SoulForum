@@ -38,44 +38,6 @@ impl ActiveLanguage {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::ForumContext;
-
-    #[test]
-    fn sets_manage_settings_strings() {
-        let mut ctx = ForumContext::default();
-        apply_language(&mut ctx, "ManageSettings");
-        assert_eq!(
-            ctx.txt.string("enable_mentions").as_deref(),
-            Some("Enable Mentions")
-        );
-    }
-
-    #[test]
-    fn respects_user_language_preference() {
-        let mut ctx = ForumContext::default();
-        ctx.user_info.language = "chinese_simplified".into();
-        apply_language(&mut ctx, "index");
-        assert_eq!(ctx.txt.string("mentions").as_deref(), Some("提及内容"));
-        assert!(ctx
-            .txt
-            .string("notify_topic_0_desc")
-            .unwrap()
-            .contains("@mentions"));
-    }
-
-    #[test]
-    fn language_detection_handles_codes() {
-        assert_eq!(
-            ActiveLanguage::from_code("zh_CN"),
-            ActiveLanguage::ChineseSimplified
-        );
-        assert_eq!(ActiveLanguage::from_code("en"), ActiveLanguage::English);
-    }
-}
-
 fn load_manage_settings(ctx: &mut ForumContext, lang: ActiveLanguage) {
     ctx.txt.set(
         "enable_mentions",
@@ -151,4 +113,42 @@ fn load_index_strings(ctx: &mut ForumContext, lang: ActiveLanguage) {
             "%1$s has been unsubscribed from new reply notifications for this topic.",
         ),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::ForumContext;
+
+    #[test]
+    fn sets_manage_settings_strings() {
+        let mut ctx = ForumContext::default();
+        apply_language(&mut ctx, "ManageSettings");
+        assert_eq!(
+            ctx.txt.string("enable_mentions").as_deref(),
+            Some("Enable Mentions")
+        );
+    }
+
+    #[test]
+    fn respects_user_language_preference() {
+        let mut ctx = ForumContext::default();
+        ctx.user_info.language = "chinese_simplified".into();
+        apply_language(&mut ctx, "index");
+        assert_eq!(ctx.txt.string("mentions").as_deref(), Some("提及内容"));
+        assert!(ctx
+            .txt
+            .string("notify_topic_0_desc")
+            .unwrap()
+            .contains("@mentions"));
+    }
+
+    #[test]
+    fn language_detection_handles_codes() {
+        assert_eq!(
+            ActiveLanguage::from_code("zh_CN"),
+            ActiveLanguage::ChineseSimplified
+        );
+        assert_eq!(ActiveLanguage::from_code("en"), ActiveLanguage::English);
+    }
 }

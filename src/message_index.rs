@@ -88,10 +88,12 @@ mod tests {
     #[test]
     fn guest_defaults_to_mode_one() {
         let service = InMemoryService::default();
-        let mut ctx = ForumContext::default();
-        ctx.board_id = Some(1);
+        let mut ctx = ForumContext {
+            board_id: Some(1),
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.user_info.is_guest = true;
-        ctx.scripturl = "https://forum.local".into();
         prepare_board_notify(&mut ctx, &service).unwrap();
         assert_eq!(ctx.context.int("board_notification_mode"), Some(1));
     }
@@ -99,11 +101,13 @@ mod tests {
     #[test]
     fn logged_in_member_gets_buttons() {
         let service = InMemoryService::default();
-        let mut ctx = ForumContext::default();
-        ctx.board_id = Some(1);
+        let mut ctx = ForumContext {
+            board_id: Some(1),
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.user_info.id = 1;
         ctx.user_info.is_guest = false;
-        ctx.scripturl = "https://forum.local".into();
         ctx.session.set("session_var", "sess");
         ctx.session.set("session_id", "123");
         prepare_board_notify(&mut ctx, &service).unwrap();

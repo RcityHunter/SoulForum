@@ -26,8 +26,10 @@ mod tests {
     #[test]
     fn memberlist_includes_pm_link() {
         let service = InMemoryService::default();
-        let mut ctx = ForumContext::default();
-        ctx.scripturl = "https://forum.local".into();
+        let mut ctx = ForumContext {
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.user_info.id = 99;
         ctx.user_info.is_guest = false;
         ctx.user_info.permissions.insert("pm_send".into());

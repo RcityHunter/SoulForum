@@ -383,9 +383,11 @@ mod tests {
     fn board_notify_configures_template() {
         let service = InMemoryService::default();
         let controller = NotifyController::new(service.clone());
-        let mut ctx = ForumContext::default();
-        ctx.board_id = Some(1);
-        ctx.scripturl = "https://forum.local".into();
+        let mut ctx = ForumContext {
+            board_id: Some(1),
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.request.set("start", 0);
         ctx.user_info.id = 1;
         ctx.user_info.is_guest = false;
@@ -401,9 +403,11 @@ mod tests {
     fn board_notify_subscribes_member() {
         let service = InMemoryService::default();
         let controller = NotifyController::new(service.clone());
-        let mut ctx = ForumContext::default();
-        ctx.board_id = Some(1);
-        ctx.scripturl = "https://forum.local".into();
+        let mut ctx = ForumContext {
+            board_id: Some(1),
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.request.set("start", 0);
         ctx.request.set("mode", 3);
         ctx.user_info.id = 1;
@@ -419,9 +423,11 @@ mod tests {
     fn topic_notify_sets_unwatched_flag() {
         let service = InMemoryService::default();
         let controller = NotifyController::new(service.clone());
-        let mut ctx = ForumContext::default();
-        ctx.topic_id = Some(1);
-        ctx.scripturl = "https://forum.local".into();
+        let mut ctx = ForumContext {
+            topic_id: Some(1),
+            scripturl: "https://forum.local".into(),
+            ..Default::default()
+        };
         ctx.request.set("start", 0);
         ctx.request.set("mode", 0);
         ctx.user_info.id = 1;
