@@ -3675,7 +3675,7 @@ impl ForumService for SurrealService {
                 id: row
                     .id
                     .as_deref()
-                    .and_then(|id| id.split(':').last())
+                    .and_then(|id| id.split(':').next_back())
                     .and_then(|id| id.parse().ok())
                     .unwrap_or_default(),
                 content_type: row.content_type.unwrap_or_else(|| content_type.to_string()),
