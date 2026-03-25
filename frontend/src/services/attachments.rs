@@ -19,5 +19,7 @@ pub async fn delete_attachment(
     client: &ApiClient,
     payload: &AttachmentDeletePayload,
 ) -> Result<AttachmentDeleteResponse, String> {
-    client.post_json("/surreal/attachments/delete", payload).await
+    client
+        .post_json("/surreal/attachments/delete", payload)
+        .await
 }

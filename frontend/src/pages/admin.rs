@@ -1,4 +1,6 @@
-use btc_forum_shared::{AdminAccount, AdminUser, BanRuleView, Board, BoardAccessEntry, BoardPermissionEntry};
+use btc_forum_shared::{
+    AdminAccount, AdminUser, BanRuleView, Board, BoardAccessEntry, BoardPermissionEntry,
+};
 use dioxus::prelude::*;
 
 #[derive(Props, Clone, PartialEq)]

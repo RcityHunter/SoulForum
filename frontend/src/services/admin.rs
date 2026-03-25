@@ -1,14 +1,18 @@
 use crate::api::client::ApiClient;
 use btc_forum_shared::{
     AdminAccountsResponse, AdminTransferPayload, AdminTransferResponse, AdminUsersResponse,
-    BanApplyResponse, BanListResponse, BanPayload, BanRevokeResponse, BoardAccessResponse,
-    BoardPermissionResponse, DocsPermissionGrantByRecordPayload, DocsPermissionGrantResponse,
+    BanApplyResponse, BanListResponse, BanPayload, BanRevokeResponse, BoardAccessPayload,
+    BoardAccessResponse, BoardPermissionPayload, BoardPermissionResponse,
+    DocsPermissionGrantByRecordPayload, DocsPermissionGrantResponse,
     DocsPermissionRevokeByRecordPayload, DocsPermissionRevokeResponse,
     ModeratorUpdateByRecordPayload, ModeratorUpdateResponse, UpdateBoardAccessResponse,
-    UpdateBoardPermissionResponse, BoardAccessPayload, BoardPermissionPayload,
+    UpdateBoardPermissionResponse,
 };
 
-pub async fn load_admin_users(client: &ApiClient, q: Option<&str>) -> Result<AdminUsersResponse, String> {
+pub async fn load_admin_users(
+    client: &ApiClient,
+    q: Option<&str>,
+) -> Result<AdminUsersResponse, String> {
     let mut path = "/admin/users?limit=200".to_string();
     if let Some(q) = q {
         let q = q.trim();
@@ -93,10 +97,16 @@ pub async fn load_bans(client: &ApiClient) -> Result<BanListResponse, String> {
     client.get_json("/admin/bans").await
 }
 
-pub async fn apply_ban(client: &ApiClient, payload: &BanPayload) -> Result<BanApplyResponse, String> {
+pub async fn apply_ban(
+    client: &ApiClient,
+    payload: &BanPayload,
+) -> Result<BanApplyResponse, String> {
     client.post_json("/admin/bans/apply", payload).await
 }
 
-pub async fn revoke_ban(client: &ApiClient, payload: &BanPayload) -> Result<BanRevokeResponse, String> {
+pub async fn revoke_ban(
+    client: &ApiClient,
+    payload: &BanPayload,
+) -> Result<BanRevokeResponse, String> {
     client.post_json("/admin/bans/revoke", payload).await
 }

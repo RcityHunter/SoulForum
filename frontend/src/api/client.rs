@@ -29,7 +29,11 @@ impl ApiClient {
 
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         let token = token.into();
-        self.token = if token.trim().is_empty() { None } else { Some(token) };
+        self.token = if token.trim().is_empty() {
+            None
+        } else {
+            Some(token)
+        };
         self
     }
 
@@ -40,7 +44,11 @@ impl ApiClient {
 
     pub fn with_csrf(mut self, csrf: impl Into<String>) -> Self {
         let csrf = csrf.into();
-        self.csrf = if csrf.trim().is_empty() { None } else { Some(csrf) };
+        self.csrf = if csrf.trim().is_empty() {
+            None
+        } else {
+            Some(csrf)
+        };
         self
     }
 
@@ -120,10 +128,7 @@ impl ApiClient {
         let url = self.resolve_url(path);
         let req = Request::post(&url)
             .header("Content-Type", "application/json")
-            .body(
-                serde_json::to_string(body)
-                    .map_err(|e| format!("序列化请求失败: {e}"))?,
-            );
+            .body(serde_json::to_string(body).map_err(|e| format!("序列化请求失败: {e}"))?);
         let req = self.apply_common_headers(req);
 
         let resp = req.send().await.map_err(|e| format!("网络错误: {e}"))?;

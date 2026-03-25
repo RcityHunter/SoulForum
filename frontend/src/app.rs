@@ -1,21 +1,20 @@
 use btc_forum_shared::{
-    AdminAccount, AdminAccountsResponse, AdminUser, AdminUsersResponse, ApiError,
-    AdminTransferPayload, AdminTransferResponse,
-    AttachmentCreateResponse, AttachmentDeletePayload,
+    AdminAccount, AdminAccountsResponse, AdminTransferPayload, AdminTransferResponse, AdminUser,
+    AdminUsersResponse, ApiError, AttachmentCreateResponse, AttachmentDeletePayload,
     AttachmentDeleteResponse, AttachmentListResponse, AttachmentMeta, AttachmentUploadResponse,
     AuthMeResponse, AuthResponse, BanApplyResponse, BanListResponse, BanPayload, BanRevokeResponse,
     BanRuleView, Board, BoardAccessEntry, BoardAccessPayload, BoardAccessResponse,
     BoardPermissionEntry, BoardPermissionPayload, BoardPermissionResponse, BoardsResponse,
     CreateAttachmentPayload, CreateBoardPayload, CreateBoardResponse, CreateNotificationPayload,
-    CreatePostPayload, CreateTopicPayload, HealthResponse, LoginRequest, MarkNotificationPayload,
-    MarkNotificationResponse, Notification, NotificationCreateResponse, NotificationListResponse,
-    PersonalMessage, PersonalMessageIdsPayload, PersonalMessageIdsResponse,
-    PersonalMessageListResponse, PersonalMessageSendPayload, PersonalMessageSendResponse, Post,
-    PostResponse, PostsResponse, RegisterRequest, RegisterResponse, Topic, TopicCreateResponse,
-    TopicsResponse, UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
-    DocsPermissionGrantByRecordPayload, DocsPermissionGrantResponse,
-    DocsPermissionRevokeByRecordPayload, DocsPermissionRevokeResponse,
-    ModeratorUpdateByRecordPayload, ModeratorUpdateResponse,
+    CreatePostPayload, CreateTopicPayload, DocsPermissionGrantByRecordPayload,
+    DocsPermissionGrantResponse, DocsPermissionRevokeByRecordPayload, DocsPermissionRevokeResponse,
+    HealthResponse, LoginRequest, MarkNotificationPayload, MarkNotificationResponse,
+    ModeratorUpdateByRecordPayload, ModeratorUpdateResponse, Notification,
+    NotificationCreateResponse, NotificationListResponse, PersonalMessage,
+    PersonalMessageIdsPayload, PersonalMessageIdsResponse, PersonalMessageListResponse,
+    PersonalMessageSendPayload, PersonalMessageSendResponse, Post, PostResponse, PostsResponse,
+    RegisterRequest, RegisterResponse, Topic, TopicCreateResponse, TopicsResponse,
+    UpdateBoardAccessResponse, UpdateBoardPermissionResponse,
 };
 use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
@@ -53,7 +52,9 @@ fn window() -> Option<web_sys::Window> {
 
 fn is_page_visible() -> bool {
     let Some(win) = window() else { return true };
-    let Some(doc) = win.document() else { return true };
+    let Some(doc) = win.document() else {
+        return true;
+    };
     // If the API isn't available, default to "visible" to avoid breaking data loading.
     !doc.hidden()
 }
@@ -71,7 +72,8 @@ fn board_created_at(board: &Board) -> String {
 }
 
 fn board_last_activity_at(board: &Board, metrics: &HashMap<String, BoardFeedMetric>) -> String {
-    board.id
+    board
+        .id
         .as_ref()
         .and_then(|id| metrics.get(id))
         .and_then(|metric| metric.last_activity_at.clone())
@@ -414,11 +416,9 @@ pub fn app() -> Element {
                     // Optimistically update local list so UI reflects success even if follow-up fetch fails.
                     let mut next = boards_sig.read().clone();
                     let created = resp.board.clone();
-                    let exists = next.iter().any(|b| {
-                        match (&b.id, &created.id) {
-                            (Some(lhs), Some(rhs)) => lhs == rhs,
-                            _ => b.name == created.name,
-                        }
+                    let exists = next.iter().any(|b| match (&b.id, &created.id) {
+                        (Some(lhs), Some(rhs)) => lhs == rhs,
+                        _ => b.name == created.name,
                     });
                     if !exists {
                         next.insert(0, created);
@@ -477,9 +477,9 @@ pub fn app() -> Element {
             match get_json::<AuthMeResponse>(&base, "/auth/me", &jwt, "").await {
                 Ok(resp) => {
                     let perms = resp.user.permissions.clone().unwrap_or_default();
-                    let pm_blocked = perms.iter().any(|perm| {
-                        perm == "ban_cannot_post" || perm == "ban_cannot_access"
-                    });
+                    let pm_blocked = perms
+                        .iter()
+                        .any(|perm| perm == "ban_cannot_post" || perm == "ban_cannot_access");
                     save_user_to_storage(&resp.user.name);
                     current_user.set(resp.user.name);
                     current_member_id.set(resp.user.member_id);
@@ -539,7 +539,10 @@ pub fn app() -> Element {
                                 .topics
                                 .iter()
                                 .filter_map(|topic| {
-                                    topic.updated_at.clone().or_else(|| topic.created_at.clone())
+                                    topic
+                                        .updated_at
+                                        .clone()
+                                        .or_else(|| topic.created_at.clone())
                                 })
                                 .max();
                             metrics.insert(
@@ -1015,7 +1018,9 @@ pub fn app() -> Element {
             match crate::services::pm::send(&client, &payload).await {
                 Ok(_) => {
                     status.set("私信已发送".into());
-                    if let Ok(resp) = crate::services::pm::load_pms(&client, &folder_sig.read().clone()).await {
+                    if let Ok(resp) =
+                        crate::services::pm::load_pms(&client, &folder_sig.read().clone()).await
+                    {
                         list.set(resp.messages);
                     }
                 }
@@ -1500,7 +1505,9 @@ pub fn app() -> Element {
                     {
                         admin_users_sig.set(users_resp.members);
                     }
-                    if let Ok(admins_resp) = crate::services::admin::load_admin_accounts(&client).await {
+                    if let Ok(admins_resp) =
+                        crate::services::admin::load_admin_accounts(&client).await
+                    {
                         admin_accounts_sig.set(admins_resp.admins);
                     }
                 }
@@ -1542,7 +1549,9 @@ pub fn app() -> Element {
                     {
                         admin_users_sig.set(users_resp.members);
                     }
-                    if let Ok(admins_resp) = crate::services::admin::load_admin_accounts(&client).await {
+                    if let Ok(admins_resp) =
+                        crate::services::admin::load_admin_accounts(&client).await
+                    {
                         admin_accounts_sig.set(admins_resp.admins);
                     }
                 }
@@ -1587,7 +1596,9 @@ pub fn app() -> Element {
                     {
                         admin_users_sig.set(users_resp.members);
                     }
-                    if let Ok(admins_resp) = crate::services::admin::load_admin_accounts(&client).await {
+                    if let Ok(admins_resp) =
+                        crate::services::admin::load_admin_accounts(&client).await
+                    {
                         admin_accounts_sig.set(admins_resp.admins);
                     }
                 }
@@ -1632,7 +1643,9 @@ pub fn app() -> Element {
                     {
                         admin_users_sig.set(users_resp.members);
                     }
-                    if let Ok(admins_resp) = crate::services::admin::load_admin_accounts(&client).await {
+                    if let Ok(admins_resp) =
+                        crate::services::admin::load_admin_accounts(&client).await
+                    {
                         admin_accounts_sig.set(admins_resp.admins);
                     }
                 }
@@ -1715,48 +1728,47 @@ pub fn app() -> Element {
     let board_metrics_map = board_feed_metrics.read().clone();
     let mut home_feed_boards = boards.read().clone();
     home_feed_boards.sort_by(|a, b| match board_feed_mode_value {
-        BoardFeedMode::Realtime => {
-            board_last_activity_at(b, &board_metrics_map)
-                .cmp(&board_last_activity_at(a, &board_metrics_map))
-                .then_with(|| board_created_at(b).cmp(&board_created_at(a)))
-                .then_with(|| a.name.cmp(&b.name))
-        }
+        BoardFeedMode::Realtime => board_last_activity_at(b, &board_metrics_map)
+            .cmp(&board_last_activity_at(a, &board_metrics_map))
+            .then_with(|| board_created_at(b).cmp(&board_created_at(a)))
+            .then_with(|| a.name.cmp(&b.name)),
         BoardFeedMode::New => board_created_at(b)
             .cmp(&board_created_at(a))
             .then_with(|| a.name.cmp(&b.name)),
         BoardFeedMode::Top => {
-            let a_topics = a
-                .id
-                .as_ref()
-                .and_then(|id| board_metrics_map.get(id))
-                .map(|m| m.topic_count)
-                .unwrap_or(0);
-            let b_topics = b
-                .id
-                .as_ref()
-                .and_then(|id| board_metrics_map.get(id))
-                .map(|m| m.topic_count)
-                .unwrap_or(0);
+            let a_topics =
+                a.id.as_ref()
+                    .and_then(|id| board_metrics_map.get(id))
+                    .map(|m| m.topic_count)
+                    .unwrap_or(0);
+            let b_topics =
+                b.id.as_ref()
+                    .and_then(|id| board_metrics_map.get(id))
+                    .map(|m| m.topic_count)
+                    .unwrap_or(0);
             b_topics
                 .cmp(&a_topics)
-                .then_with(|| board_last_activity_at(b, &board_metrics_map).cmp(&board_last_activity_at(a, &board_metrics_map)))
+                .then_with(|| {
+                    board_last_activity_at(b, &board_metrics_map)
+                        .cmp(&board_last_activity_at(a, &board_metrics_map))
+                })
                 .then_with(|| a.name.cmp(&b.name))
         }
         BoardFeedMode::Discussed => {
-            let a_topics = a
-                .id
-                .as_ref()
-                .and_then(|id| board_metrics_map.get(id))
-                .map(|m| m.topic_count)
-                .unwrap_or(0);
-            let b_topics = b
-                .id
-                .as_ref()
-                .and_then(|id| board_metrics_map.get(id))
-                .map(|m| m.topic_count)
-                .unwrap_or(0);
-            let a_score = (a_topics as i64) * 1000 + board_last_activity_at(a, &board_metrics_map).len() as i64;
-            let b_score = (b_topics as i64) * 1000 + board_last_activity_at(b, &board_metrics_map).len() as i64;
+            let a_topics =
+                a.id.as_ref()
+                    .and_then(|id| board_metrics_map.get(id))
+                    .map(|m| m.topic_count)
+                    .unwrap_or(0);
+            let b_topics =
+                b.id.as_ref()
+                    .and_then(|id| board_metrics_map.get(id))
+                    .map(|m| m.topic_count)
+                    .unwrap_or(0);
+            let a_score = (a_topics as i64) * 1000
+                + board_last_activity_at(a, &board_metrics_map).len() as i64;
+            let b_score = (b_topics as i64) * 1000
+                + board_last_activity_at(b, &board_metrics_map).len() as i64;
             b_score
                 .cmp(&a_score)
                 .then_with(|| b_topics.cmp(&a_topics))
