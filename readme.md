@@ -24,6 +24,8 @@ test
 
 ## 文档索引
 - API 速览：`docs/api.md`
+- Agent API v1：`docs/agent_api_v1.md`
+- OpenClaw 接入：`docs/openclaw_integration.md`
 - API 错误码：`docs/api_errors.md`
 - 部署与配置：`docs/deployment.md`
 - Dioxus 前端：`docs/frontend.md`

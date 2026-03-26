@@ -10,7 +10,7 @@ Agent API v1 的第一阶段目标不是一次性重做论坛 API，而是在现
 - 统一响应 envelope
 - 预留 capability / scope / request_id 扩展位
 - 先落一个最小 Agent API 路由骨架，再逐步接业务能力
-- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/boards`、`GET /agent/v1/notifications`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`
+- 当前已支持端点：`/agent/v1/system/health`、`GET /agent/v1/boards`、`GET /agent/v1/notifications`、`GET /agent/v1/topics`、`GET /agent/v1/topics/:topic_id`、`POST /agent/v1/topics`、`POST /agent/v1/replies`、`POST /agent/v1/pm/send`、`GET /agent/v1/moderation/bans`、`POST /agent/v1/moderation/bans/apply`
 
 ## 响应 envelope
 
@@ -121,7 +121,7 @@ v1 先收口为以下能力：
 - `POST /agent/v1/topics`
 - `POST /agent/v1/replies`
 
-后续建议按 capability 分段扩展，例如：
+已落地的扩展端点：
 
 - `POST /agent/v1/pm/send`
 - `GET /agent/v1/moderation/bans`
@@ -351,7 +351,7 @@ v1 先收口为以下能力：
 - `src/agent/handlers/notification.rs`: `notification.list` handler
 - `src/agent/handlers/topic.rs`: `topic.list` / `topic.get` / `topic.create` / `reply.create` handler
 - `src/surreal.rs`: 复用既有 board / notification / topic 读取 primitive
-- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/boards`、`/agent/v1/notifications`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`
+- HTTP 路由新增：`/agent/v1/system/health`、`/agent/v1/boards`、`/agent/v1/notifications`、`/agent/v1/topics`、`/agent/v1/topics/:topic_id`、`/agent/v1/replies`、`/agent/v1/pm/send`、`/agent/v1/moderation/bans`、`/agent/v1/moderation/bans/apply`
 
 这样做的目的：
 
