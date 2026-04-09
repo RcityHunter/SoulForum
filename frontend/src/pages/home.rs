@@ -28,8 +28,8 @@ pub fn HomePage(mut props: HomePageProps) -> Element {
     rsx! {
         section { class: "hero",
             div { class: "hero__copy",
-                span { class: "pill", "Bitcoin Forum · Testnet" }
-                h1 { "比特币技术 & 社区实验室" }
+                span { class: "pill", "Suol · Testnet" }
+                h1 { "灵魂论坛" }
                 p { "直连 SurrealDB 的论坛 Demo：注册、发帖、回帖与权限全部在这里自测。" }
                 div { class: "hero__actions",
                     button { onclick: move |_| props.on_load_boards.call(()), "加载版块/主题" }
