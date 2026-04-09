@@ -60,7 +60,6 @@ a { color: inherit; text-decoration: none; }
     gap: 10px;
     font-weight: 700;
     font-size: 18px;
-    text-transform: lowercase;
 }
 .brand__dot {
     width: 16px;
