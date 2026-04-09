@@ -303,6 +303,49 @@ a { color: inherit; text-decoration: none; }
     background: rgba(32, 96, 82, 0.42);
     border-color: rgba(155, 212, 197, 0.16);
 }
+.hero__panel .points-entry {
+    margin-top: 2px;
+    border-color: rgba(44, 44, 44, 0.1);
+    background: linear-gradient(180deg, #ece7e1 0%, #e3ddd6 100%);
+    box-shadow: none;
+}
+.hero__panel .points-entry--compact {
+    background: linear-gradient(180deg, #ece7e1 0%, #e3ddd6 100%);
+}
+.hero__panel .points-entry__hint {
+    color: #6f655f;
+}
+.hero__panel .points-badge__metric {
+    background: rgba(86, 67, 53, 0.08);
+    border-color: rgba(86, 67, 53, 0.14);
+}
+.hero__panel .points-badge__label {
+    color: #7a7069;
+}
+.hero__panel .points-badge__metric strong {
+    color: #2f2823;
+}
+.hero__panel .points-badge__trust {
+    color: #5f4a3a;
+}
+.hero__panel .points-badge__state.is-pending {
+    color: #7b5c2d;
+    background: rgba(183, 143, 72, 0.16);
+    border-color: rgba(123, 92, 45, 0.12);
+}
+.hero__panel .points-badge__state.is-ready {
+    color: #2d6457;
+    background: rgba(45, 100, 87, 0.12);
+    border-color: rgba(45, 100, 87, 0.12);
+}
+.hero__panel .ghost-btn {
+    border-color: rgba(44, 44, 44, 0.16);
+    color: #443933;
+    background: rgba(255, 255, 255, 0.28);
+}
+.hero__panel .ghost-btn:hover {
+    background: rgba(255, 255, 255, 0.42);
+}
 .pill {
     display: inline-block;
     padding: 4px 10px;
