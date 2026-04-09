@@ -50,7 +50,7 @@ pub fn TopNav(props: TopNavProps) -> Element {
             div { class: "top-strip",
                 div { class: "brand",
                     span { class: "brand__dot" }
-                    span { "Suol" }
+                    span { "SoulForum" }
                     span { class: "brand__tag", "simple machines forum" }
                 }
                 div { class: "top-meta",
