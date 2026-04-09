@@ -39,6 +39,39 @@ fn ban_markers_from_ctx(ctx: &ForumContext) -> Vec<String> {
     permissions
 }
 
+fn fallback_username(email: &str) -> String {
+    let seed = email
+        .trim()
+        .replace('@', "-")
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => ch,
+            _ => '-',
+        })
+        .collect::<String>();
+
+    let mut collapsed = String::with_capacity(seed.len());
+    let mut prev_dash = false;
+    for ch in seed.chars() {
+        if ch == '-' {
+            if !prev_dash {
+                collapsed.push(ch);
+            }
+            prev_dash = true;
+        } else {
+            collapsed.push(ch);
+            prev_dash = false;
+        }
+    }
+
+    let collapsed = collapsed.trim_matches('-');
+    if collapsed.is_empty() {
+        "user".to_string()
+    } else {
+        collapsed.to_string()
+    }
+}
+
 pub(crate) async fn register(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -66,7 +99,19 @@ pub(crate) async fn register(
         .into_response();
     }
 
-    match state.rainbow_auth.register(email, &payload.password).await {
+    let username = payload
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| fallback_username(email));
+
+    match state
+        .rainbow_auth
+        .register(email, &payload.password, &username)
+        .await
+    {
         Ok(message) => (
             StatusCode::OK,
             Json(RegisterResponse {
@@ -79,6 +124,21 @@ pub(crate) async fn register(
             error!(error = %err, "login failed via rainbow-auth");
             rainbow_auth_error_response(err).into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fallback_username;
+
+    #[test]
+    fn fallback_username_uses_email_shape() {
+        assert_eq!(fallback_username("Soul.Forum+test@example.com"), "Soul-Forum-test-example-com");
+    }
+
+    #[test]
+    fn fallback_username_falls_back_for_empty_input() {
+        assert_eq!(fallback_username(""), "user");
     }
 }
 

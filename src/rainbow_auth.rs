@@ -32,12 +32,21 @@ impl RainbowAuthClient {
         parse_json_response(resp).await
     }
 
-    pub async fn register(&self, email: &str, password: &str) -> Result<String, RainbowAuthError> {
+    pub async fn register(
+        &self,
+        email: &str,
+        password: &str,
+        username: &str,
+    ) -> Result<String, RainbowAuthError> {
         let url = format!("{}/api/auth/register", self.base_url.trim_end_matches('/'));
         let resp = self
             .http
             .post(url)
-            .json(&RainbowRegisterRequest { email, password })
+            .json(&RainbowRegisterRequest {
+                email,
+                password,
+                username,
+            })
             .send()
             .await
             .map_err(RainbowAuthError::from)?;
@@ -209,6 +218,7 @@ struct RainbowLoginRequest<'a> {
 struct RainbowRegisterRequest<'a> {
     email: &'a str,
     password: &'a str,
+    username: &'a str,
 }
 
 #[derive(Serialize)]

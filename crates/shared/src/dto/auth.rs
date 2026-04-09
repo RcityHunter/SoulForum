@@ -9,9 +9,9 @@ pub struct LoginRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RegisterRequest {
-    #[serde(alias = "username")]
     pub email: String,
     pub password: String,
+    pub username: Option<String>,
     pub role: Option<String>,
     pub permissions: Option<Vec<String>>,
 }
