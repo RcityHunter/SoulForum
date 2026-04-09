@@ -312,6 +312,9 @@ pub fn app() -> Element {
     let mut new_board_desc = use_signal(|| "".to_string());
     let mut new_board_topic_subject = use_signal(|| "".to_string());
     let mut new_board_topic_body = use_signal(|| "".to_string());
+    let mut existing_topic_board_id = use_signal(|| "".to_string());
+    let mut existing_topic_subject = use_signal(|| "".to_string());
+    let mut existing_topic_body = use_signal(|| "".to_string());
     let mut access_board_id = use_signal(|| "".to_string());
     let mut access_groups = use_signal(|| "".to_string());
     let mut perm_board_id = use_signal(|| "".to_string());
@@ -497,6 +500,53 @@ pub fn app() -> Element {
                     }
                 }
                 Err(err) => status.set(format!("创建版块失败：{err}")),
+            }
+        });
+    };
+
+    let create_topic = move || {
+        let base = api_base.read().clone();
+        let jwt = token.read().clone();
+        let csrf = csrf_token.read().clone();
+        let board_id = existing_topic_board_id.read().clone();
+        let subject = existing_topic_subject.read().clone();
+        let body = existing_topic_body.read().clone();
+        let mut status = status.clone();
+        let mut topics_sig = topics.clone();
+        if board_id.trim().is_empty() {
+            status.set("请先填写已有版块 ID".into());
+            return;
+        }
+        if subject.trim().is_empty() || body.trim().is_empty() {
+            status.set("请填写主题标题和内容".into());
+            return;
+        }
+        spawn(async move {
+            status.set("创建主题中...".into());
+            let payload = CreateTopicPayload {
+                board_id: board_id.clone(),
+                subject: subject.clone(),
+                body: body.clone(),
+            };
+            let client = build_client(&base, &jwt, &csrf);
+            match crate::services::forum::create_topic(&client, &payload).await {
+                Ok(resp) => {
+                    let mut next = topics_sig.read().clone();
+                    next.insert(0, resp.topic.clone());
+                    topics_sig.set(next);
+                    status.set(format!("主题已创建：{}", resp.topic.subject));
+                    selected_board.set(board_id.clone());
+                    selected_topic.set(resp.topic.id.clone().unwrap_or_default());
+                    posts.set(vec![resp.first_post.clone()]);
+                    show_topic_detail.set(true);
+                    replace_browser_path(&forum_path(
+                        &board_id,
+                        &resp.topic.id.clone().unwrap_or_default(),
+                    ));
+                    existing_topic_subject.set(String::new());
+                    existing_topic_body.set(String::new());
+                }
+                Err(err) => status.set(format!("创建主题失败：{err}")),
             }
         });
     };
@@ -2285,6 +2335,9 @@ pub fn app() -> Element {
                     new_board_desc,
                     new_board_topic_subject,
                     new_board_topic_body,
+                    existing_topic_board_id,
+                    existing_topic_subject,
+                    existing_topic_body,
                     access_board_id,
                     access_groups,
                     perm_board_id,
@@ -2309,6 +2362,7 @@ pub fn app() -> Element {
                     on_revoke_docs_space: move |rid| (revoke_docs_space_create)(rid),
                     on_transfer_admin: move |_| transfer_admin(),
                     on_create_board: move |_| create_board(),
+                    on_create_topic: move |_| create_topic(),
                     on_update_access: move |_| update_access(),
                     on_update_permissions: move |_| update_permissions(),
                     on_apply_ban: move |_| apply_ban(),

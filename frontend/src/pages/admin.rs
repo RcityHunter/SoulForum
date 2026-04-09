@@ -26,6 +26,9 @@ pub struct AdminPageProps {
     pub new_board_desc: Signal<String>,
     pub new_board_topic_subject: Signal<String>,
     pub new_board_topic_body: Signal<String>,
+    pub existing_topic_board_id: Signal<String>,
+    pub existing_topic_subject: Signal<String>,
+    pub existing_topic_body: Signal<String>,
 
     pub access_board_id: Signal<String>,
     pub access_groups: Signal<String>,
@@ -58,6 +61,7 @@ pub struct AdminPageProps {
     pub on_transfer_admin: EventHandler<()>,
 
     pub on_create_board: EventHandler<()>,
+    pub on_create_topic: EventHandler<()>,
     pub on_update_access: EventHandler<()>,
     pub on_update_permissions: EventHandler<()>,
 
@@ -249,11 +253,37 @@ pub fn AdminPage(mut props: AdminPageProps) -> Element {
                 }
                 div {
                     h4 { "当前版块" }
+                    div { class: "stack",
+                        h4 { "给已有版块创建主题" }
+                        label { "版块内部 ID" }
+                        input {
+                            value: "{props.existing_topic_board_id.read()}",
+                            oninput: move |evt| props.existing_topic_board_id.set(evt.value()),
+                            placeholder: "输入已有版块内部 ID，或在下方点“用于发主题”自动填入"
+                        }
+                        label { "主题标题" }
+                        input {
+                            value: "{props.existing_topic_subject.read()}",
+                            oninput: move |evt| props.existing_topic_subject.set(evt.value()),
+                            placeholder: "例如：本版块发帖规范"
+                        }
+                        label { "主题内容" }
+                        textarea {
+                            value: "{props.existing_topic_body.read()}",
+                            oninput: move |evt| props.existing_topic_body.set(evt.value()),
+                            rows: "4",
+                            placeholder: "输入主题正文"
+                        }
+                        div { class: "actions",
+                            button { onclick: move |_| props.on_create_topic.call(()), "给已有版块创建主题" }
+                        }
+                    }
                     ul { class: "list list--limit5",
                         { props.boards.read().iter().cloned().map(|b| {
                             let bid = b.id.clone().unwrap_or_default();
                             let bid_for_access = bid.clone();
                             let bid_for_perm = bid.clone();
+                            let bid_for_topic = bid.clone();
                             let desc = b.description.clone().unwrap_or_default();
                             rsx! {
                                 li { class: "item",
@@ -268,6 +298,10 @@ pub fn AdminPage(mut props: AdminPageProps) -> Element {
                                             props.perm_board_id.set(bid_for_perm.clone());
                                             props.status.set(format!("已选择权限版块: {}", bid_for_perm));
                                         }, "用于权限规则" }
+                                        button { class: "ghost-btn", onclick: move |_| {
+                                            props.existing_topic_board_id.set(bid_for_topic.clone());
+                                            props.status.set(format!("已选择发主题版块: {}", bid_for_topic));
+                                        }, "用于发主题" }
                                     }
                                 }
                             }
