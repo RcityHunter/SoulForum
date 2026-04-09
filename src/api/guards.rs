@@ -10,7 +10,7 @@ use btc_forum_rust::{
 use super::{
     auth::user_groups,
     error::{api_error, api_error_from_status},
-    state::AppState,
+    state::{csrf_enabled, AppState},
 };
 
 pub(crate) fn ensure_permission(
@@ -130,6 +130,9 @@ pub(crate) fn ensure_admin(
 pub(crate) fn verify_csrf(
     headers: &axum::http::HeaderMap,
 ) -> Result<(), (StatusCode, Json<btc_forum_shared::ApiError>)> {
+    if !csrf_enabled() {
+        return Ok(());
+    }
     let header_token = headers
         .get("x-csrf-token")
         .and_then(|v| v.to_str().ok())
