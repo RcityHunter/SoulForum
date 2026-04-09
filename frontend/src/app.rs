@@ -402,6 +402,7 @@ pub fn app() -> Element {
             let payload = RegisterRequest {
                 email: user.clone(),
                 password: pass.clone(),
+                username: None,
                 role: None,
                 permissions: None,
             };
@@ -1826,6 +1827,12 @@ pub fn app() -> Element {
     });
 
     let points_member_label = current_member_label.clone();
+    let selected_board_name_for_detail = boards
+        .read()
+        .iter()
+        .find(|board| board.id.as_deref() == Some(selected_board.read().as_str()))
+        .map(|board| board.name.clone())
+        .unwrap_or_default();
 
     let mut logout = move || {
         clear_auth_storage();
@@ -1991,6 +1998,7 @@ pub fn app() -> Element {
                         focused_post_id,
                         selected_board,
                         selected_topic,
+                        selected_board_name: selected_board_name_for_detail,
                         topics,
                         posts,
                         new_post_body,

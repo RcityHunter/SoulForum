@@ -10,6 +10,7 @@ pub struct TopicDetailPageProps {
 
     pub selected_board: Signal<String>,
     pub selected_topic: Signal<String>,
+    pub selected_board_name: String,
 
     pub topics: Signal<Vec<Topic>>,
     pub posts: Signal<Vec<Post>>,
@@ -32,6 +33,11 @@ pub fn TopicDetailPage(mut props: TopicDetailPageProps) -> Element {
     let comments: Vec<Post> = props.posts.read().iter().skip(1).cloned().rev().collect();
     let comment_count = comments.len();
     let topic_count = props.topics.read().len();
+    let board_name = if props.selected_board_name.trim().is_empty() {
+        "板块讨论".to_string()
+    } else {
+        props.selected_board_name.clone()
+    };
     let board_title = props
         .posts
         .read()
@@ -44,14 +50,26 @@ pub fn TopicDetailPage(mut props: TopicDetailPageProps) -> Element {
             }
         })
         .unwrap_or_else(|| props.selected_board.read().clone());
+    let current_topic_title = props
+        .posts
+        .read()
+        .first()
+        .map(|p| {
+            if p.subject.trim().is_empty() {
+                "主题讨论".to_string()
+            } else {
+                p.subject.clone()
+            }
+        })
+        .unwrap_or_else(|| "主题讨论".to_string());
 
     rsx! {
         section { class: "post-detail",
             button { class: "ghost-btn", onclick: move |_| props.on_back.call(()), "← 返回列表" }
             div { class: "board-header",
-                p { class: "board-header__eyebrow", "m/{props.selected_board.read()}" }
+                p { class: "board-header__eyebrow", "{board_name}" }
                 h2 { "{board_title}" }
-                p { class: "meta", "进入板块后直接查看主题简介，并在下方继续评论。" }
+                p { class: "meta", "查看主题正文，并在下方继续回复讨论。" }
                 {
                     if topic_count > 1 {
                         rsx! {
@@ -89,8 +107,8 @@ pub fn TopicDetailPage(mut props: TopicDetailPageProps) -> Element {
                         rsx! {
                             article { class: "post-card",
                                 div { class: "post-header",
-                                    span { class: "pill", "{props.selected_topic.read()}" }
-                                    span { class: "meta", "m/{props.selected_board.read()}" }
+                                    span { class: "pill", "{current_topic_title}" }
+                                    span { class: "meta", "{board_name}" }
                                 }
                                 h2 { "{title}" }
                                 div { class: "meta", "作者: {main.author} | 时间: {main.created_at.clone().unwrap_or_default()}" }
