@@ -51,53 +51,41 @@ fn env_non_empty(key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-async fn rpc_signin_token(
+async fn signin_token(
     endpoint: &str,
     user: &str,
     pass: &str,
 ) -> Result<String, surrealdb::Error> {
-    let rpc_url = format!("{}/rpc", endpoint.trim_end_matches('/'));
-    let payload = serde_json::json!({
-        "id": 1,
-        "method": "signin",
-        "params": [
-            { "user": user, "pass": pass }
-        ]
-    });
+    let signin_url = format!("{}/signin", endpoint.trim_end_matches('/'));
+    let payload = serde_json::json!({ "user": user, "pass": pass });
 
     let response = reqwest::Client::new()
-        .post(&rpc_url)
+        .post(&signin_url)
         .header("Content-Type", "application/json")
         .body(payload.to_string())
         .send()
         .await
-        .map_err(|e| surrealdb::Error::thrown(format!("surreal rpc signin request failed: {e}")))?;
+        .map_err(|e| surrealdb::Error::thrown(format!("surreal signin request failed: {e}")))?;
 
     let text = response.text().await.map_err(|e| {
-        surrealdb::Error::thrown(format!("surreal rpc signin response read failed: {e}"))
+        surrealdb::Error::thrown(format!("surreal signin response read failed: {e}"))
     })?;
 
     let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-        surrealdb::Error::thrown(format!("surreal rpc signin invalid json: {e}; body={text}"))
+        surrealdb::Error::thrown(format!("surreal signin invalid json: {e}; body={text}"))
     })?;
 
-    if let Some(token) = value.get("result").and_then(|v| v.as_str()) {
+    if let Some(token) = value.get("token").and_then(|v| v.as_str()) {
         return Ok(token.to_string());
     }
 
-    if let Some(access) = value
-        .get("result")
-        .and_then(|v| v.get("access"))
-        .and_then(|v| v.as_str())
-    {
-        return Ok(access.to_string());
-    }
-
     Err(surrealdb::Error::thrown(format!(
-        "surreal rpc signin failed: {}",
+        "surreal signin failed: {}",
         value
             .get("error")
             .cloned()
+            .or_else(|| value.get("description").cloned())
+            .or_else(|| value.get("details").cloned())
             .unwrap_or(serde_json::Value::String(text))
     )))
 }
@@ -168,23 +156,23 @@ pub async fn reauth_from_env(client: &SurrealClient) -> Result<(), surrealdb::Er
             },
             Err(signin_err) => {
                 warn!(error = %signin_err, user = %user, namespace = %ns, database = %db, "surreal native signin failed");
-                // Fallback: try rpc signin + authenticate(token)
-                match rpc_signin_token(&endpoint, &user, &pass).await {
+                // Fallback: SurrealDB 3.x HTTP signin issues a JWT via /signin.
+                match signin_token(&endpoint, &user, &pass).await {
                     Ok(token) => match client.authenticate(token).await {
                         Ok(_) => match client.use_ns(&ns).use_db(&db).await {
                             Ok(_) => return Ok(()),
                             Err(err) => {
-                                warn!(error = %err, namespace = %ns, database = %db, "surreal rpc-token auth succeeded but use_ns/use_db failed");
+                                warn!(error = %err, namespace = %ns, database = %db, "surreal signin-token auth succeeded but use_ns/use_db failed");
                                 last_err = Some(err);
                             }
                         },
                         Err(err) => {
-                            warn!(error = %err, user = %user, namespace = %ns, database = %db, "surreal rpc-token authenticate failed");
+                            warn!(error = %err, user = %user, namespace = %ns, database = %db, "surreal signin-token authenticate failed");
                             last_err = Some(err);
                         }
                     },
                     Err(err) => {
-                        warn!(error = %err, user = %user, namespace = %ns, database = %db, "surreal rpc signin failed");
+                        warn!(error = %err, user = %user, namespace = %ns, database = %db, "surreal signin failed");
                         last_err = Some(err);
                     }
                 }
@@ -195,7 +183,7 @@ pub async fn reauth_from_env(client: &SurrealClient) -> Result<(), surrealdb::Er
     if let Some(err) = last_err {
         Err(err)
     } else {
-        let token = rpc_signin_token(&endpoint, &env_user, &env_pass).await?;
+        let token = signin_token(&endpoint, &env_user, &env_pass).await?;
         client.authenticate(token).await?;
         client.use_ns(&env_ns).use_db(&env_db).await?;
         Ok(())

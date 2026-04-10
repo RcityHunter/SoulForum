@@ -18,6 +18,10 @@ use super::{
     state::AppState,
 };
 
+fn is_auth_error(message: &str) -> bool {
+    message.contains("401") || message.contains("Unauthorized") || message.contains("InvalidAuth")
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct LeaderboardParams {
     pub(crate) metric: Option<String>,
@@ -79,7 +83,8 @@ pub(crate) async fn points_leaderboard(
 ) -> impl IntoResponse {
     let metric = points::parse_metric(params.metric.as_deref());
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
-    match points::leaderboard(state.surreal.client(), metric.clone(), limit).await {
+    let client = state.surreal.client();
+    match points::leaderboard(&client, metric.clone(), limit).await {
         Ok(leaderboard) => (
             StatusCode::OK,
             Json(PointsLeaderboardResponse {
@@ -89,12 +94,32 @@ pub(crate) async fn points_leaderboard(
             }),
         )
             .into_response(),
-        Err(err) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ErrorCode::Internal,
-            err.to_string(),
-        )
-        .into_response(),
+        Err(err) => {
+            let message = err.to_string();
+            if is_auth_error(&message) {
+                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
+                match points::leaderboard(&client, metric.clone(), limit).await {
+                    Ok(leaderboard) => (
+                        StatusCode::OK,
+                        Json(PointsLeaderboardResponse {
+                            status: "ok".into(),
+                            metric,
+                            leaderboard,
+                        }),
+                    )
+                        .into_response(),
+                    Err(retry_err) => api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ErrorCode::Internal,
+                        retry_err.to_string(),
+                    )
+                    .into_response(),
+                }
+            } else {
+                api_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal, message)
+                    .into_response()
+            }
+        }
     }
 }
 
@@ -119,7 +144,8 @@ pub(crate) async fn create_points_event_api(
         )
         .into_response();
     }
-    match points::create_points_event(state.surreal.client(), payload).await {
+    let client = state.surreal.client();
+    match points::create_points_event(&client, payload.clone()).await {
         Ok((event, balance)) => (
             StatusCode::CREATED,
             Json(PointsEventCreateResponse {
@@ -129,6 +155,30 @@ pub(crate) async fn create_points_event_api(
             }),
         )
             .into_response(),
+        Err(err) if is_auth_error(&err.to_string()) => {
+            let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
+            match points::create_points_event(&client, payload).await {
+                Ok((event, balance)) => (
+                    StatusCode::CREATED,
+                    Json(PointsEventCreateResponse {
+                        status: "ok".into(),
+                        event,
+                        balance,
+                    }),
+                )
+                    .into_response(),
+                Err(btc_forum_rust::services::ForumError::Validation(message)) => {
+                    api_error(StatusCode::BAD_REQUEST, ErrorCode::Validation, message)
+                        .into_response()
+                }
+                Err(err) => api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ErrorCode::Internal,
+                    err.to_string(),
+                )
+                .into_response(),
+            }
+        }
         Err(btc_forum_rust::services::ForumError::Validation(message)) => {
             api_error(StatusCode::BAD_REQUEST, ErrorCode::Validation, message).into_response()
         }
@@ -151,11 +201,34 @@ async fn load_balance_with_events(
     ),
     String,
 > {
-    let balance = points::get_points_balance(state.surreal.client(), member_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let recent_events = points::list_recent_points_events(state.surreal.client(), member_id, 20)
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = state.surreal.client();
+    let balance = match points::get_points_balance(&client, member_id).await {
+        Ok(balance) => balance,
+        Err(err) => {
+            let message = err.to_string();
+            if is_auth_error(&message) {
+                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
+                points::get_points_balance(&client, member_id)
+                    .await
+                    .map_err(|e| e.to_string())?
+            } else {
+                return Err(message);
+            }
+        }
+    };
+    let recent_events = match points::list_recent_points_events(&client, member_id, 20).await {
+        Ok(events) => events,
+        Err(err) => {
+            let message = err.to_string();
+            if is_auth_error(&message) {
+                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
+                points::list_recent_points_events(&client, member_id, 20)
+                    .await
+                    .map_err(|e| e.to_string())?
+            } else {
+                return Err(message);
+            }
+        }
+    };
     Ok((balance, recent_events))
 }
