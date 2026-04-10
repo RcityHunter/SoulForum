@@ -6,7 +6,11 @@ use axum::{
 };
 use serde::Deserialize;
 
-use btc_forum_rust::{auth::AuthClaims, points};
+use btc_forum_rust::{
+    auth::AuthClaims,
+    points,
+    surreal::{connect_from_env, reauth_from_env},
+};
 use btc_forum_shared::{
     CreatePointsEventPayload, ErrorCode, PointsBalanceResponse, PointsEventCreateResponse,
     PointsLeaderboardResponse,
@@ -97,7 +101,7 @@ pub(crate) async fn points_leaderboard(
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
+                let _ = reauth_from_env(&client).await;
                 match points::leaderboard(&client, metric.clone(), limit).await {
                     Ok(leaderboard) => (
                         StatusCode::OK,
@@ -108,6 +112,33 @@ pub(crate) async fn points_leaderboard(
                         }),
                     )
                         .into_response(),
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        match connect_from_env().await {
+                            Ok(fresh) => match points::leaderboard(&fresh, metric.clone(), limit).await {
+                                Ok(leaderboard) => (
+                                    StatusCode::OK,
+                                    Json(PointsLeaderboardResponse {
+                                        status: "ok".into(),
+                                        metric,
+                                        leaderboard,
+                                    }),
+                                )
+                                    .into_response(),
+                                Err(fresh_err) => api_error(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    ErrorCode::Internal,
+                                    fresh_err.to_string(),
+                                )
+                                .into_response(),
+                            },
+                            Err(connect_err) => api_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                ErrorCode::Internal,
+                                connect_err.to_string(),
+                            )
+                            .into_response(),
+                        }
+                    }
                     Err(retry_err) => api_error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         ErrorCode::Internal,
@@ -156,8 +187,8 @@ pub(crate) async fn create_points_event_api(
         )
             .into_response(),
         Err(err) if is_auth_error(&err.to_string()) => {
-            let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
-            match points::create_points_event(&client, payload).await {
+            let _ = reauth_from_env(&client).await;
+            match points::create_points_event(&client, payload.clone()).await {
                 Ok((event, balance)) => (
                     StatusCode::CREATED,
                     Json(PointsEventCreateResponse {
@@ -171,6 +202,35 @@ pub(crate) async fn create_points_event_api(
                     api_error(StatusCode::BAD_REQUEST, ErrorCode::Validation, message)
                         .into_response()
                 }
+                Err(err) if is_auth_error(&err.to_string()) => match connect_from_env().await {
+                    Ok(fresh) => match points::create_points_event(&fresh, payload).await {
+                        Ok((event, balance)) => (
+                            StatusCode::CREATED,
+                            Json(PointsEventCreateResponse {
+                                status: "ok".into(),
+                                event,
+                                balance,
+                            }),
+                        )
+                            .into_response(),
+                        Err(btc_forum_rust::services::ForumError::Validation(message)) => {
+                            api_error(StatusCode::BAD_REQUEST, ErrorCode::Validation, message)
+                                .into_response()
+                        }
+                        Err(fresh_err) => api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            ErrorCode::Internal,
+                            fresh_err.to_string(),
+                        )
+                        .into_response(),
+                    },
+                    Err(connect_err) => api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ErrorCode::Internal,
+                        connect_err.to_string(),
+                    )
+                    .into_response(),
+                },
                 Err(err) => api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ErrorCode::Internal,
@@ -207,10 +267,17 @@ async fn load_balance_with_events(
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
-                points::get_points_balance(&client, member_id)
-                    .await
-                    .map_err(|e| e.to_string())?
+                let _ = reauth_from_env(&client).await;
+                match points::get_points_balance(&client, member_id).await {
+                    Ok(balance) => balance,
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        let fresh = connect_from_env().await.map_err(|e| e.to_string())?;
+                        points::get_points_balance(&fresh, member_id)
+                            .await
+                            .map_err(|e| e.to_string())?
+                    }
+                    Err(retry_err) => return Err(retry_err.to_string()),
+                }
             } else {
                 return Err(message);
             }
@@ -221,10 +288,17 @@ async fn load_balance_with_events(
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = btc_forum_rust::surreal::reauth_from_env(&client).await;
-                points::list_recent_points_events(&client, member_id, 20)
-                    .await
-                    .map_err(|e| e.to_string())?
+                let _ = reauth_from_env(&client).await;
+                match points::list_recent_points_events(&client, member_id, 20).await {
+                    Ok(events) => events,
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        let fresh = connect_from_env().await.map_err(|e| e.to_string())?;
+                        points::list_recent_points_events(&fresh, member_id, 20)
+                            .await
+                            .map_err(|e| e.to_string())?
+                    }
+                    Err(retry_err) => return Err(retry_err.to_string()),
+                }
             } else {
                 return Err(message);
             }

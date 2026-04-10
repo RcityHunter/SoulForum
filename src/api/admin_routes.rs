@@ -18,7 +18,7 @@ use tracing::{error, warn};
 use btc_forum_rust::{
     auth::AuthClaims,
     services::{BanAffects, BanCondition, BanRule, ForumService, SendPersonalMessage},
-    surreal::SurrealUser,
+    surreal::{connect_from_env, reauth_from_env, SurrealUser},
 };
 use btc_forum_shared::{
     ActionLogEntry, ActionLogsResponse, AdminAccount, AdminAccountsResponse, AdminGroup,
@@ -122,6 +122,10 @@ fn user_key_from_record_id(raw: &str) -> String {
                 .trim_matches('⟩')
                 .to_string()
         })
+}
+
+fn is_auth_error(message: &str) -> bool {
+    message.contains("401") || message.contains("Unauthorized") || message.contains("InvalidAuth")
 }
 
 fn auth_user_id_from_record_id(record_id: &str) -> Option<String> {
@@ -477,11 +481,45 @@ pub(crate) async fn list_users(
         Ok(resp) => resp,
         Err(err) => {
             let msg = err.to_string();
-            if msg.contains("401") || msg.contains("Unauthorized") {
+            if is_auth_error(&msg) {
                 warn!(error = %err, "list_users unauthorized, trying reauth");
-                let _ = btc_forum_rust::surreal::reauth_from_env(state.surreal.client()).await;
+                let _ = reauth_from_env(state.surreal.client()).await;
                 match query_users().await {
                     Ok(resp) => resp,
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        warn!(error = %retry_err, "list_users still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = match connect_from_env().await {
+                            Ok(client) => client,
+                            Err(connect_err) => {
+                                error!(error = %connect_err, "failed to rebuild surreal client for list_users");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    connect_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        };
+                        match fresh
+                            .query(
+                                r#"
+                                SELECT type::string(id) as id, name, primary_group, additional_groups, warning, type::string(created_at) as created_at
+                                FROM users
+                                ORDER BY created_at DESC;
+                                "#,
+                            )
+                            .await
+                        {
+                            Ok(resp) => resp,
+                            Err(fresh_err) => {
+                                error!(error = %fresh_err, "failed to list users with rebuilt surreal client");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    fresh_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        }
+                    }
                     Err(retry_err) => {
                         error!(error = %retry_err, "failed to list users after reauth");
                         return api_error_from_status(
@@ -574,11 +612,46 @@ pub(crate) async fn list_admins(
         Ok(resp) => resp,
         Err(err) => {
             let msg = err.to_string();
-            if msg.contains("401") || msg.contains("Unauthorized") {
+            if is_auth_error(&msg) {
                 warn!(error = %err, "list_admins unauthorized, trying reauth");
-                let _ = btc_forum_rust::surreal::reauth_from_env(state.surreal.client()).await;
+                let _ = reauth_from_env(state.surreal.client()).await;
                 match query_admins().await {
                     Ok(resp) => resp,
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        warn!(error = %retry_err, "list_admins still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = match connect_from_env().await {
+                            Ok(client) => client,
+                            Err(connect_err) => {
+                                error!(error = %connect_err, "failed to rebuild surreal client for list_admins");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    connect_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        };
+                        match fresh
+                            .query(
+                                r#"
+                                SELECT type::string(id) as id, name, role, permissions, password_hash, type::string(created_at) as created_at
+                                FROM users
+                                WHERE role = 'admin' OR permissions CONTAINS 'manage_boards'
+                                ORDER BY created_at ASC;
+                                "#,
+                            )
+                            .await
+                        {
+                            Ok(resp) => resp,
+                            Err(fresh_err) => {
+                                error!(error = %fresh_err, "failed to list admin users with rebuilt surreal client");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    fresh_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        }
+                    }
                     Err(retry_err) => {
                         error!(error = %retry_err, "failed to list admin users after reauth");
                         return api_error_from_status(
@@ -1723,11 +1796,44 @@ pub(crate) async fn get_board_permissions(
         Ok(resp) => resp,
         Err(err) => {
             let msg = err.to_string();
-            if msg.contains("401") || msg.contains("Unauthorized") {
+            if is_auth_error(&msg) {
                 warn!(error = %err, "get_board_permissions unauthorized, trying reauth");
-                let _ = btc_forum_rust::surreal::reauth_from_env(state.surreal.client()).await;
+                let _ = reauth_from_env(state.surreal.client()).await;
                 match query_board_permissions().await {
                     Ok(resp) => resp,
+                    Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
+                        warn!(error = %retry_err, "get_board_permissions still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = match connect_from_env().await {
+                            Ok(client) => client,
+                            Err(connect_err) => {
+                                error!(error = %connect_err, "failed to rebuild surreal client for board permissions");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    connect_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        };
+                        match fresh
+                            .query(
+                                r#"
+                                SELECT board_id, group_id, allow, deny
+                                FROM board_permissions;
+                                "#,
+                            )
+                            .await
+                        {
+                            Ok(resp) => resp,
+                            Err(fresh_err) => {
+                                error!(error = %fresh_err, "failed to list board permissions with rebuilt surreal client");
+                                return api_error_from_status(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    fresh_err.to_string(),
+                                )
+                                .into_response();
+                            }
+                        }
+                    }
                     Err(retry_err) => {
                         error!(error = %retry_err, "failed to list board permissions after reauth");
                         return api_error_from_status(

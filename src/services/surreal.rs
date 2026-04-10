@@ -1739,18 +1739,32 @@ impl ForumService for SurrealService {
     fn list_members(&self) -> Result<Vec<MemberRecord>, ForumError> {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
-        let mut response = rt
-            .block_on(async {
-                self.client
-                    .query(
-                        r#"
+        let query = r#"
                         SELECT meta::id(id) as id, name, role, permissions, primary_group, additional_groups
                         FROM users;
-                        "#,
-                    )
-                    .await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        "#;
+        let mut response = match rt.block_on(async { self.client.query(query).await }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "list_members reauth failed, trying reconnect");
+                }
+                match rt.block_on(async { self.client.query(query).await }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "list_members still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async { fresh.query(query).await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
         #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<String>,
@@ -2075,18 +2089,32 @@ impl ForumService for SurrealService {
     fn list_ban_rules(&self) -> Result<Vec<BanRule>, ForumError> {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
-        let mut response = rt
-            .block_on(async {
-                self.client
-                    .query(
-                        r#"
+        let query = r#"
                         SELECT meta::id(id) as id, reason, expires_at_ms, cannot_post, cannot_access, conditions
                         FROM ban_rules;
-                        "#,
-                    )
-                    .await
-            })
-            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        "#;
+        let mut response = match rt.block_on(async { self.client.query(query).await }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "list_ban_rules reauth failed, trying reconnect");
+                }
+                match rt.block_on(async { self.client.query(query).await }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "list_ban_rules still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async { fresh.query(query).await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
         #[derive(Debug, Clone, SurrealValue)]
         struct Row {
             id: Option<i64>,
