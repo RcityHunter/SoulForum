@@ -148,6 +148,45 @@ fn clear_auth_storage() {
         }
     }
 }
+
+fn build_cross_app_link(app_base_path: &str, token: Option<&str>, next_path: &str) -> String {
+    let clean_base = app_base_path.trim_end_matches('/');
+    let clean_next = if next_path.trim().is_empty() {
+        "/"
+    } else {
+        next_path
+    };
+
+    match token.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(jwt) => format!(
+            "{clean_base}/sso?token={}&next={}",
+            urlencoding::encode(jwt),
+            urlencoding::encode(clean_next)
+        ),
+        None => format!("{clean_base}/"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_cross_app_link;
+
+    #[test]
+    fn build_cross_app_link_uses_plain_home_when_token_missing() {
+        assert_eq!(build_cross_app_link("/blog", None, "/"), "/blog/");
+        assert_eq!(build_cross_app_link("/docs/", Some("   "), "/dashboard"), "/docs/");
+    }
+
+    #[test]
+    fn build_cross_app_link_encodes_token_and_next_path() {
+        let link = build_cross_app_link("/docs", Some("abc.def+/="), "/spaces/demo?tab=all");
+        assert_eq!(
+            link,
+            "/docs/sso?token=abc.def%2B%2F%3D&next=%2Fspaces%2Fdemo%3Ftab%3Dall"
+        );
+    }
+}
+
 fn read_csrf_cookie() -> Option<String> {
     ApiClient::read_csrf_cookie()
 }
@@ -1802,10 +1841,9 @@ pub fn app() -> Element {
     let is_register = *is_register_page.read();
     let is_login = *is_login_page.read();
     let is_logged_in = !token.read().trim().is_empty();
-    // Security: never embed JWT into URLs (leaks via history/referrer/logs). Keep links token-free.
-    // TODO(mid-term): implement a server-side SSO redirect using HttpOnly cookies or one-time codes.
-    let blog_link = "/blog/".to_string();
-    let docs_link = "/docs/".to_string();
+    let current_jwt = token.read().trim().to_string();
+    let blog_link = build_cross_app_link("/blog", Some(&current_jwt), "/");
+    let docs_link = build_cross_app_link("/docs", Some(&current_jwt), "/dashboard");
     let display_name = current_user.read().trim().to_string();
     let display_name = if display_name.is_empty() {
         "Member".to_string()
