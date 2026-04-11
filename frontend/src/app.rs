@@ -163,7 +163,20 @@ fn clear_auth_storage() {
     }
 }
 
-fn build_cross_app_link(app_base_path: &str, token: Option<&str>, next_path: &str) -> String {
+fn should_use_explicit_sso(protocol: Option<&str>) -> bool {
+    matches!(protocol, Some("https:"))
+}
+
+fn current_protocol() -> Option<String> {
+    window().and_then(|win| win.location().protocol().ok())
+}
+
+fn build_cross_app_link_for_protocol(
+    app_base_path: &str,
+    token: Option<&str>,
+    next_path: &str,
+    protocol: Option<&str>,
+) -> String {
     let clean_base = app_base_path.trim_end_matches('/');
     let clean_next = if next_path.trim().is_empty() {
         "/"
@@ -171,7 +184,11 @@ fn build_cross_app_link(app_base_path: &str, token: Option<&str>, next_path: &st
         next_path
     };
 
-    match token.map(str::trim).filter(|value| !value.is_empty()) {
+    match token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|_| should_use_explicit_sso(protocol))
+    {
         Some(jwt) => format!(
             "{clean_base}/sso?token={}&next={}",
             urlencoding::encode(jwt),
@@ -181,23 +198,54 @@ fn build_cross_app_link(app_base_path: &str, token: Option<&str>, next_path: &st
     }
 }
 
+fn build_cross_app_link(app_base_path: &str, token: Option<&str>, next_path: &str) -> String {
+    build_cross_app_link_for_protocol(
+        app_base_path,
+        token,
+        next_path,
+        current_protocol().as_deref(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::build_cross_app_link;
+    use super::build_cross_app_link_for_protocol;
 
     #[test]
     fn build_cross_app_link_uses_plain_home_when_token_missing() {
-        assert_eq!(build_cross_app_link("/blog", None, "/"), "/blog/");
-        assert_eq!(build_cross_app_link("/docs/", Some("   "), "/dashboard"), "/docs/");
+        assert_eq!(
+            build_cross_app_link_for_protocol("/blog", None, "/", Some("http:")),
+            "/blog/"
+        );
+        assert_eq!(
+            build_cross_app_link_for_protocol("/docs/", Some("   "), "/dashboard", Some("https:")),
+            "/docs/"
+        );
     }
 
     #[test]
-    fn build_cross_app_link_encodes_token_and_next_path() {
-        let link = build_cross_app_link("/docs", Some("abc.def+/="), "/spaces/demo?tab=all");
+    fn build_cross_app_link_encodes_token_and_next_path_on_https() {
+        let link = build_cross_app_link_for_protocol(
+            "/docs",
+            Some("abc.def+/="),
+            "/spaces/demo?tab=all",
+            Some("https:"),
+        );
         assert_eq!(
             link,
             "/docs/sso?token=abc.def%2B%2F%3D&next=%2Fspaces%2Fdemo%3Ftab%3Dall"
         );
+    }
+
+    #[test]
+    fn build_cross_app_link_skips_sso_on_http() {
+        let link = build_cross_app_link_for_protocol(
+            "/blog",
+            Some("abc.def+/="),
+            "/dashboard",
+            Some("http:"),
+        );
+        assert_eq!(link, "/blog/");
     }
 }
 
