@@ -48,6 +48,19 @@ struct BoardFeedMetric {
     last_activity_at: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NoticeKind {
+    Info,
+    Success,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct UiNotice {
+    kind: NoticeKind,
+    message: String,
+}
+
 // ---------- Utilities ----------
 fn window() -> Option<web_sys::Window> {
     web_sys::window()
@@ -362,6 +375,7 @@ pub fn app() -> Element {
     let mut token = use_signal(|| load_token_from_storage().unwrap_or_default());
     let mut current_user = use_signal(|| load_user_from_storage().unwrap_or_default());
     let mut status = use_signal(|| "等待操作...".to_string());
+    let mut notice = use_signal(|| None::<UiNotice>);
     let mut current_member_id = use_signal(|| None::<i64>);
     let mut csrf_token = use_signal(|| read_csrf_cookie().unwrap_or_default());
     let mut auth_checked = use_signal(|| false);
@@ -453,8 +467,13 @@ pub fn app() -> Element {
         let mut auth_checked = auth_checked.clone();
         let mut pm_disabled = pm_disabled.clone();
         let mut pm_forbidden_notified = pm_forbidden_notified.clone();
+        let mut notice = notice.clone();
         if user.is_empty() || pass.is_empty() {
             status.set("请输入邮箱和密码".into());
+            notice.set(Some(UiNotice {
+                kind: NoticeKind::Error,
+                message: "请输入邮箱和密码".into(),
+            }));
             return;
         }
         spawn(async move {
@@ -481,8 +500,19 @@ pub fn app() -> Element {
                     auth_checked.set(false);
                     pm_disabled.set(false);
                     pm_forbidden_notified.set(false);
+                    notice.set(Some(UiNotice {
+                        kind: NoticeKind::Success,
+                        message: format!("已登录：{}", resp.user.name),
+                    }));
                 }
-                Err(err) => status.set(format!("登录失败：{err}")),
+                Err(err) => {
+                    let message = format!("登录失败：{err}");
+                    status.set(message.clone());
+                    notice.set(Some(UiNotice {
+                        kind: NoticeKind::Error,
+                        message,
+                    }));
+                }
             }
         });
     };
@@ -493,12 +523,21 @@ pub fn app() -> Element {
         let pass = register_password.read().clone();
         let confirm = register_confirm.read().clone();
         let mut status = status.clone();
+        let mut notice = notice.clone();
         if user.is_empty() || pass.is_empty() {
             status.set("请输入邮箱和密码".into());
+            notice.set(Some(UiNotice {
+                kind: NoticeKind::Error,
+                message: "请输入邮箱和密码".into(),
+            }));
             return;
         }
         if !confirm.is_empty() && confirm != pass {
             status.set("两次密码不一致".into());
+            notice.set(Some(UiNotice {
+                kind: NoticeKind::Error,
+                message: "两次密码不一致".into(),
+            }));
             return;
         }
         spawn(async move {
@@ -513,7 +552,11 @@ pub fn app() -> Element {
             match post_json::<RegisterResponse, _>(&base, "/auth/register", "", "", &payload).await
             {
                 Ok(resp) => {
-                    status.set(resp.message);
+                    status.set(resp.message.clone());
+                    notice.set(Some(UiNotice {
+                        kind: NoticeKind::Success,
+                        message: resp.message,
+                    }));
                 }
                 Err(err) => {
                     let friendly = if err.contains("Email already registered")
@@ -524,7 +567,11 @@ pub fn app() -> Element {
                     } else {
                         format!("注册失败：{err}")
                     };
-                    status.set(friendly);
+                    status.set(friendly.clone());
+                    notice.set(Some(UiNotice {
+                        kind: NoticeKind::Error,
+                        message: friendly,
+                    }));
                 }
             }
         });
@@ -2089,6 +2136,26 @@ pub fn app() -> Element {
                 on_logout: move |_| logout(),
             }
 
+            {notice.read().as_ref().map(|current| {
+                let class = match current.kind {
+                    NoticeKind::Info => "toast toast--info",
+                    NoticeKind::Success => "toast toast--success",
+                    NoticeKind::Error => "toast toast--error",
+                };
+                rsx! {
+                    div { class: "toast-stack",
+                        aside { class: "{class}",
+                            div { class: "toast__body", "{current.message}" }
+                            button {
+                                class: "toast__close",
+                                onclick: move |_| notice.set(None),
+                                "×"
+                            }
+                        }
+                    }
+                }
+            })}
+
             div { class: "status-bar",
                 div { "状态({BUILD_TAG})：{status.read()}" }
             }
@@ -2104,7 +2171,7 @@ pub fn app() -> Element {
                     register_username,
                     register_password,
                     register_confirm,
-                    register_feedback: status.read().clone(),
+                    register_feedback: "".to_string(),
                     on_register: move |_| register(),
                 }
             }} else if !is_admin { rsx! {

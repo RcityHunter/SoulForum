@@ -142,6 +142,62 @@ a { color: inherit; text-decoration: none; }
     background: var(--paper);
 }
 
+.toast-stack {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 50;
+    width: min(360px, calc(100vw - 24px));
+}
+
+.toast {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 18px 40px rgba(24, 19, 13, 0.18);
+    backdrop-filter: blur(10px);
+}
+
+.toast--info {
+    background: rgba(244, 236, 220, 0.96);
+    color: #3d2f20;
+}
+
+.toast--success {
+    background: rgba(228, 238, 223, 0.97);
+    color: #223326;
+    border-color: rgba(88, 126, 81, 0.28);
+}
+
+.toast--error {
+    background: rgba(248, 227, 222, 0.97);
+    color: #592f24;
+    border-color: rgba(168, 91, 74, 0.28);
+}
+
+.toast__body {
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 600;
+}
+
+.toast__close {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
 .progress {
     border: 1px solid var(--border);
     border-radius: 999px;
