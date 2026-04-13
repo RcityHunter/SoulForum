@@ -2198,31 +2198,12 @@ pub fn app() -> Element {
                 }
             }} else if !is_admin { rsx! {
                 crate::pages::home::HomePage {
-                    api_base,
-                    token,
-                    status,
-                    csrf_token,
-                    boards_len: boards.read().len(),
-                    topics_len: topics.read().len(),
-                    posts_len: posts.read().len(),
                     current_member_label: current_member_label.clone(),
                     points_snapshot: current_points_snapshot.read().clone(),
                     points_hint: if current_points_snapshot.read().backend_ready {
                         "实时读取当前用户真实 Karma / Merit。".to_string()
                     } else {
                         "当前为 preview 占位；登录后会自动读取真实 Karma / Merit。".to_string()
-                    },
-                    on_load_boards: move |_| load_boards(),
-                    on_check_health: move |_| check_health(),
-                    on_clear_token: move |_| {
-                        token.set("".into());
-                        save_token_to_storage("");
-                        status.set("已清空本地 token".into());
-                    },
-                    on_sync_csrf: move |_| {
-                        let csrf = read_csrf_cookie().unwrap_or_default();
-                        csrf_token.set(csrf.clone());
-                        status.set("已同步 CSRF".into());
                     },
                     on_open_points: move |_| {
                         status.set(points_help_text(&current_points_snapshot.read()));
