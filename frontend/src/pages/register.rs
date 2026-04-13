@@ -5,7 +5,6 @@ pub fn RegisterPage(
     register_username: Signal<String>,
     register_password: Signal<String>,
     register_confirm: Signal<String>,
-    register_feedback: String,
     on_register: EventHandler<()>,
 ) -> Element {
     rsx! {
@@ -13,22 +12,6 @@ pub fn RegisterPage(
             h2 { "Register - Required Information" }
             div { class: "register-note",
                 p { "Please fill in the required information below. JavaScript is required for the registration page." }
-            }
-            {
-                if !register_feedback.trim().is_empty() {
-                    rsx! {
-                        div {
-                            class: if register_feedback.contains("已注册") || register_feedback.contains("失败") {
-                                "register-feedback register-feedback--error"
-                            } else {
-                                "register-feedback"
-                            },
-                            "{register_feedback}"
-                        }
-                    }
-                } else {
-                    rsx! {}
-                }
             }
             div { class: "register-grid",
                 div { class: "register-labels",

@@ -134,14 +134,6 @@ a { color: inherit; text-decoration: none; }
     color: #fff;
 }
 
-.status-bar {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-soft);
-    padding: 10px 12px;
-    color: var(--muted);
-    background: var(--paper);
-}
-
 .toast-stack {
     position: fixed;
     top: 18px;

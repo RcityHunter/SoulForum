@@ -11,6 +11,7 @@ pub struct TopNavProps {
     pub is_register: bool,
     pub is_login: bool,
     pub is_logged_in: bool,
+    pub is_forum_admin: bool,
     pub welcome_text: String,
     pub blog_link: String,
     pub docs_link: String,
@@ -91,12 +92,14 @@ pub fn TopNav(props: TopNavProps) -> Element {
                     }
                 }} else { rsx! {} }}
 
-                a {
-                    class: if props.is_admin { "nav-tab active" } else { "nav-tab" },
-                    href: "{APP_BASE_PATH}/admin",
-                    onclick: move |_| props.on_admin.call(()),
-                    "Admin"
-                }
+                {if props.is_forum_admin { rsx! {
+                    a {
+                        class: if props.is_admin { "nav-tab active" } else { "nav-tab" },
+                        href: "{APP_BASE_PATH}/admin",
+                        onclick: move |_| props.on_admin.call(()),
+                        "Admin"
+                    }
+                }} else { rsx! {} }}
                 a { class: "nav-tab", href: "{props.blog_link}", "Blog" }
                 a { class: "nav-tab", href: "{props.docs_link}", "Docs" }
                 a { class: "nav-tab", href: "#", "More" }

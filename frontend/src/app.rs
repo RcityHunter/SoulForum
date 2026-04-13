@@ -122,6 +122,24 @@ fn pm_error_message(err: &str) -> Option<&'static str> {
     }
 }
 
+fn is_admin_user(role: Option<&str>, permissions: &[String]) -> bool {
+    role
+        .map(|value| value.eq_ignore_ascii_case("admin"))
+        .unwrap_or(false)
+        || permissions.iter().any(|perm| {
+            matches!(
+                perm.as_str(),
+                "admin"
+                    | "administrator"
+                    | "manage_boards"
+                    | "manage_forum"
+                    | "manage_permissions"
+                    | "manage_users"
+                    | "grant_docs_space_create"
+            )
+        })
+}
+
 fn save_token_to_storage(token: &str) {
     if let Some(win) = window() {
         if let Ok(Some(storage)) = win.session_storage() {
@@ -374,6 +392,7 @@ pub fn app() -> Element {
     let mut api_base = use_signal(|| API_BASE_PATH.to_string());
     let mut token = use_signal(|| load_token_from_storage().unwrap_or_default());
     let mut current_user = use_signal(|| load_user_from_storage().unwrap_or_default());
+    let mut is_forum_admin = use_signal(|| false);
     let mut status = use_signal(|| "等待操作...".to_string());
     let mut notice = use_signal(|| None::<UiNotice>);
     let mut current_member_id = use_signal(|| None::<i64>);
@@ -467,6 +486,7 @@ pub fn app() -> Element {
         let mut auth_checked = auth_checked.clone();
         let mut pm_disabled = pm_disabled.clone();
         let mut pm_forbidden_notified = pm_forbidden_notified.clone();
+        let mut is_forum_admin = is_forum_admin.clone();
         let mut notice = notice.clone();
         if user.is_empty() || pass.is_empty() {
             status.set("请输入邮箱和密码".into());
@@ -489,6 +509,8 @@ pub fn app() -> Element {
                     save_user_to_storage(&resp.user.name);
                     current_user.set(resp.user.name.clone());
                     current_member_id.set(resp.user.member_id);
+                    let perms = resp.user.permissions.clone().unwrap_or_default();
+                    is_forum_admin.set(is_admin_user(resp.user.role.as_deref(), &perms));
                     let csrf = read_csrf_cookie().unwrap_or_default();
                     csrf_token.set(csrf);
                     status.set(format!("已登录：{}", resp.user.name));
@@ -710,6 +732,7 @@ pub fn app() -> Element {
         let mut status = status.clone();
         let mut token_sig = token.clone();
         let mut current_user = current_user.clone();
+        let mut is_forum_admin = is_forum_admin.clone();
         let mut pm_disabled = pm_disabled.clone();
         let mut pm_forbidden_notified = pm_forbidden_notified.clone();
         spawn(async move {
@@ -723,6 +746,7 @@ pub fn app() -> Element {
                     let pm_blocked = perms
                         .iter()
                         .any(|perm| perm == "ban_cannot_post" || perm == "ban_cannot_access");
+                    is_forum_admin.set(is_admin_user(resp.user.role.as_deref(), &perms));
                     save_user_to_storage(&resp.user.name);
                     current_user.set(resp.user.name);
                     current_member_id.set(resp.user.member_id);
@@ -743,6 +767,7 @@ pub fn app() -> Element {
                         clear_auth_storage();
                         token_sig.set("".into());
                         current_user.set("".into());
+                        is_forum_admin.set(false);
                         pm_disabled.set(false);
                         pm_forbidden_notified.set(false);
                         status.set(format!("登录已失效：{err_text}"));
@@ -2034,6 +2059,7 @@ pub fn app() -> Element {
         clear_auth_storage();
         token.set("".into());
         current_user.set("".into());
+        is_forum_admin.set(false);
         current_member_id.set(None);
         pm_disabled.set(false);
         pm_forbidden_notified.set(false);
@@ -2101,6 +2127,7 @@ pub fn app() -> Element {
                 is_register,
                 is_login,
                 is_logged_in,
+                is_forum_admin: *is_forum_admin.read(),
                 welcome_text: welcome_text.clone(),
                 blog_link: blog_link.clone(),
                 docs_link: docs_link.clone(),
@@ -2156,10 +2183,6 @@ pub fn app() -> Element {
                 }
             })}
 
-            div { class: "status-bar",
-                div { "状态({BUILD_TAG})：{status.read()}" }
-            }
-
             {if is_login && !is_admin { rsx! {
                 crate::pages::login::LoginPage {
                     login_username,
@@ -2171,7 +2194,6 @@ pub fn app() -> Element {
                     register_username,
                     register_password,
                     register_confirm,
-                    register_feedback: "".to_string(),
                     on_register: move |_| register(),
                 }
             }} else if !is_admin { rsx! {
