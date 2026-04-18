@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>敏感操作日志</title>
+  <link rel="stylesheet" href="../assets/theme.css">
+  <script defer src="../assets/theme.js"></script>
+</head>
+<body>
+  <p><a href="../index.html">返回目录</a></p>
+  <h1>敏感操作日志</h1>
+  <p>论坛管理员后台 &gt; 日志与审计 &gt; 敏感操作日志</p>
+  <nav>
+  <a href="./01-管理员操作日志.html">管理员操作日志</a>
+  <a href="./02-登录日志.html">登录日志</a>
+  <a href="./03-敏感操作日志.html">敏感操作日志</a>
+  <a href="./04-权限变更日志.html">权限变更日志</a>
+  <a href="./05-内容删除日志.html">内容删除日志</a>
+  <a href="./06-配置修改日志.html">配置修改日志</a>
+</nav>
+  <form>
+  <fieldset>
+    <legend>筛选条件</legend>
+<p><label>时间范围<br><select><option selected>今天</option><option>近7天</option><option>近30天</option><option>自定义</option></select></label></p>
+<p><label>操作结果<br><select><option selected>全部</option><option>成功</option><option>失败</option><option>已驳回</option></select></label></p>
+<p><label>操作人 / 对象<br><input type="text" value="支持管理员、会员、主题编号"></label></p>
+<p><label>关键词<br><input type="text" value="敏感操作日志、对象编号、原因说明"></label></p>
+  </fieldset>
+  <p><button>查询</button> <button type="button">重置</button> <button type="button">导出</button></p>
+</form>
+<section>
+  <h2>日志列表</h2>
+  <table>
+  <thead><tr><th>操作人</th><th>动作</th><th>对象</th><th>时间</th><th>结果</th></tr></thead>
+  <tbody>
+    <tr><td>管理员A</td><td>敏感操作日志操作</td><td>对象#1024</td><td>今天 10:12</td><td>成功</td></tr>
+    <tr><td>管理员B</td><td>敏感操作日志操作</td><td>对象#1025</td><td>今天 09:43</td><td>成功</td></tr>
+    <tr><td>管理员C</td><td>敏感操作日志操作</td><td>对象#1026</td><td>昨天 20:31</td><td>已记录</td></tr>
+  </tbody>
+</table>
+</section>
+</body>
+</html>

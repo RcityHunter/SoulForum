@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>审核详情页</title>
+  <link rel="stylesheet" href="../assets/theme.css">
+  <script defer src="../assets/theme.js"></script>
+</head>
+<body>
+  <p><a href="../index.html">返回目录</a></p>
+  <h1>审核详情页</h1>
+  <p>论坛管理员后台 &gt; 审核与举报 &gt; 审核详情页</p>
+  <nav>
+  <a href="./01-待审核帖子列表.html">待审核帖子列表</a>
+  <a href="./02-待审核主题列表.html">待审核主题列表</a>
+  <a href="./03-审核详情页.html">审核详情页</a>
+  <a href="./04-批量审核操作页.html">批量审核操作页</a>
+  <a href="./05-审核历史记录.html">审核历史记录</a>
+  <a href="./06-举报列表.html">举报列表</a>
+  <a href="./07-举报详情.html">举报详情</a>
+  <a href="./08-举报处理页.html">举报处理页</a>
+  <a href="./09-举报分类设置.html">举报分类设置</a>
+  <a href="./10-举报处理记录.html">举报处理记录</a>
+</nav>
+  <section>
+  <h2>对象摘要</h2>
+  <ul>
+    <li>对象编号：#1024</li>
+    <li>当前状态：待处理</li>
+    <li>创建时间：2026-04-18 09:20</li>
+    <li>最后操作：管理员复核中</li>
+  </ul>
+</section>
+<section>
+  <h2>详细信息</h2>
+  <p>这里展示与“审核详情页”相关的主体信息、上下文说明、关联对象和处理依据。</p>
+  <ul>
+    <li>标题：示例主题标题，含分类与来源信息</li>
+    <li>发起人：示例用户 / 目标对象 / 来源板块</li>
+    <li>说明：保留原型级字段，方便后续补足真实业务数据</li>
+  </ul>
+</section>
+<form>
+  <fieldset>
+    <legend>操作面板</legend>
+<p><label>处理结果<br><select><option selected>通过</option><option>驳回</option><option>保留观察</option><option>升级处理</option></select></label></p>
+<p><label>优先级<br><select><option selected>高</option><option>中</option><option>低</option></select></label></p>
+<p class="full"><label>处理说明<br><textarea>填写处理依据、沟通记录、驳回原因或同步说明。</textarea></label></p>
+<p class="full"><label>抄送对象<br><input type="text" value="相关版主、管理员、业务负责人"></label></p>
+  </fieldset>
+  <p><button>提交处理</button> <button type="button">恢复默认</button></p>
+</form>
+</body>
+</html>

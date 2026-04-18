@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>会员列表</title>
+  <link rel="stylesheet" href="../assets/theme.css">
+  <script defer src="../assets/theme.js"></script>
+</head>
+<body>
+  <p><a href="../index.html">返回目录</a></p>
+  <h1>会员列表</h1>
+  <p>论坛管理员后台 &gt; 会员管理 &gt; 会员列表</p>
+  <nav>
+  <a href="./01-会员列表.html">会员列表</a>
+  <a href="./02-会员搜索.html">会员搜索</a>
+  <a href="./03-会员详情页.html">会员详情页</a>
+  <a href="./04-编辑会员资料.html">编辑会员资料</a>
+  <a href="./05-用户组调整页.html">用户组调整页</a>
+  <a href="./06-重置密码页.html">重置密码页</a>
+  <a href="./07-会员发帖记录.html">会员发帖记录</a>
+  <a href="./08-会员登录日志.html">会员登录日志</a>
+</nav>
+  <form>
+  <fieldset>
+    <legend>筛选条件</legend>
+<p><label>关键词<br><input type="text" value="会员列表名称 / 编号 / 用户名"></label></p>
+<p><label>状态<br><select><option selected>全部</option><option>正常</option><option>待处理</option><option>已完成</option><option>停用</option></select></label></p>
+<p><label>排序方式<br><select><option selected>最近更新</option><option>创建时间</option><option>优先级</option><option>风险等级</option></select></label></p>
+<p><label>所属范围<br><input type="text" value="会员管理 / 全站 / 指定板块"></label></p>
+  </fieldset>
+  <p><button>查询</button> <button type="button">重置</button> <button type="button">导出</button></p>
+</form>
+<section>
+  <h2>会员列表数据</h2>
+  <table>
+  <thead><tr><th>名称</th><th>分组</th><th>状态</th><th>最近活动</th><th>操作</th></tr></thead>
+  <tbody>
+    <tr><td>会员A</td><td>普通会员</td><td>正常</td><td>今天 09:20</td><td>查看</td></tr>
+    <tr><td>会员B</td><td>资深会员</td><td>禁言中</td><td>今天 08:15</td><td>处理</td></tr>
+    <tr><td>会员C</td><td>新会员</td><td>待验证</td><td>昨天 21:40</td><td>查看</td></tr>
+  </tbody>
+</table>
+</section>
+<section>
+  <h2>快捷动作</h2>
+  <ul>
+    <li>支持批量操作、导出、查看详情和进入处理页。</li>
+    <li>高风险项在列表中前置展示。</li>
+    <li>列表字段仅保留原型级核心信息，方便后续再细化。</li>
+  </ul>
+</section>
+</body>
+</html>

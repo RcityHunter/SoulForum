@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>权限档案管理</title>
+  <link rel="stylesheet" href="../assets/theme.css">
+  <script defer src="../assets/theme.js"></script>
+</head>
+<body>
+  <p><a href="../index.html">返回目录</a></p>
+  <h1>权限档案管理</h1>
+  <p>论坛管理员后台 &gt; 权限与角色 &gt; 权限档案管理</p>
+  <nav>
+  <a href="./01-用户组管理.html">用户组管理</a>
+  <a href="./02-新增用户组.html">新增用户组</a>
+  <a href="./03-常规权限管理.html">常规权限管理</a>
+  <a href="./04-板块权限管理.html">板块权限管理</a>
+  <a href="./05-权限档案管理.html">权限档案管理</a>
+  <a href="./06-后台管理员列表.html">后台管理员列表</a>
+  <a href="./07-新增后台管理员.html">新增后台管理员</a>
+  <a href="./08-角色权限配置.html">角色权限配置</a>
+  <a href="./09-后台菜单权限配置.html">后台菜单权限配置</a>
+</nav>
+  <form>
+  <fieldset>
+    <legend>筛选条件</legend>
+<p><label>关键词<br><input type="text" value="权限档案管理名称 / 编号 / 用户名"></label></p>
+<p><label>状态<br><select><option selected>全部</option><option>正常</option><option>待处理</option><option>已完成</option><option>停用</option></select></label></p>
+<p><label>排序方式<br><select><option selected>最近更新</option><option>创建时间</option><option>优先级</option><option>风险等级</option></select></label></p>
+<p><label>所属范围<br><input type="text" value="权限与角色 / 全站 / 指定板块"></label></p>
+  </fieldset>
+  <p><button>查询</button> <button type="button">重置</button> <button type="button">导出</button></p>
+</form>
+<section>
+  <h2>权限档案管理数据</h2>
+  <table>
+  <thead><tr><th>对象</th><th>状态</th><th>优先级</th><th>更新时间</th><th>操作</th></tr></thead>
+  <tbody>
+    <tr><td>权限档案管理对象A</td><td>处理中</td><td>高优先级</td><td>今天 09:30</td><td>查看</td></tr>
+    <tr><td>权限档案管理对象B</td><td>待处理</td><td>中优先级</td><td>今天 08:45</td><td>处理</td></tr>
+    <tr><td>权限档案管理对象C</td><td>已完成</td><td>低优先级</td><td>昨天 18:10</td><td>记录</td></tr>
+  </tbody>
+</table>
+</section>
+<section>
+  <h2>快捷动作</h2>
+  <ul>
+    <li>支持批量操作、导出、查看详情和进入处理页。</li>
+    <li>高风险项在列表中前置展示。</li>
+    <li>列表字段仅保留原型级核心信息，方便后续再细化。</li>
+  </ul>
+</section>
+</body>
+</html>

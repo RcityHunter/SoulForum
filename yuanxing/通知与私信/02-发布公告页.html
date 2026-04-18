@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>发布公告页</title>
+  <link rel="stylesheet" href="../assets/theme.css">
+  <script defer src="../assets/theme.js"></script>
+</head>
+<body>
+  <p><a href="../index.html">返回目录</a></p>
+  <h1>发布公告页</h1>
+  <p>论坛管理员后台 &gt; 通知与私信 &gt; 发布公告页</p>
+  <nav>
+  <a href="./01-站内公告列表.html">站内公告列表</a>
+  <a href="./02-发布公告页.html">发布公告页</a>
+  <a href="./03-站内信群发页.html">站内信群发页</a>
+  <a href="./04-邮件模板管理.html">邮件模板管理</a>
+  <a href="./05-通知模板管理.html">通知模板管理</a>
+  <a href="./06-发送记录列表.html">发送记录列表</a>
+  <a href="./07-私信设置.html">私信设置</a>
+  <a href="./08-私信举报列表.html">私信举报列表</a>
+  <a href="./09-私信审核页.html">私信审核页</a>
+  <a href="./10-私信黑名单管理.html">私信黑名单管理</a>
+</nav>
+  <section>
+  <h2>处理对象</h2>
+  <ul>
+    <li>业务对象：发布公告页</li>
+    <li>当前状态：待执行</li>
+    <li>来源模块：通知与私信</li>
+    <li>风险等级：中</li>
+  </ul>
+</section>
+<form>
+  <fieldset>
+    <legend>执行表单</legend>
+<p><label>目标对象<br><input type="text" value="输入主题、帖子、会员或配置目标"></label></p>
+<p><label>处理方式<br><select><option selected>保留</option><option>调整</option><option>迁移</option><option>封禁</option><option>人工复核</option></select></label></p>
+<p><label>生效时间<br><select><option selected>立即</option><option>24小时后</option><option>下个整点</option><option>手动发布</option></select></label></p>
+<p class="full"><label>执行说明<br><textarea>填写本次操作的原因、影响范围与回滚说明。</textarea></label></p>
+<p class="full"><label>通知范围<br><input type="text" value="相关会员、版主、管理员"></label></p>
+  </fieldset>
+  <p><button>确认执行</button> <button type="button">恢复默认</button></p>
+</form>
+<section>
+  <h2>相关记录</h2>
+  <table>
+  <thead><tr><th>记录项</th><th>状态</th><th>优先级</th><th>时间</th><th>操作</th></tr></thead>
+  <tbody>
+    <tr><td>发布公告页对象A</td><td>处理中</td><td>高优先级</td><td>今天 09:30</td><td>查看</td></tr>
+    <tr><td>发布公告页对象B</td><td>待处理</td><td>中优先级</td><td>今天 08:45</td><td>处理</td></tr>
+    <tr><td>发布公告页对象C</td><td>已完成</td><td>低优先级</td><td>昨天 18:10</td><td>记录</td></tr>
+  </tbody>
+</table>
+</section>
+</body>
+</html>
