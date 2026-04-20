@@ -18,6 +18,7 @@ use crate::surreal::{
     get_user_by_name, list_boards as surreal_list_boards,
     list_posts_for_topic as surreal_list_posts_for_topic, reauth_from_env, SurrealClient,
 };
+use crate::verification::{VerificationActionKind, VerificationChallengeStatus};
 use chrono::{TimeZone, Utc};
 use serde_json::Value;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -40,6 +41,73 @@ impl PostRow {
             .split(':')
             .next_back()
             .and_then(|s| s.parse().ok())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, SurrealValue)]
+struct VerificationChallengeRow {
+    challenge_id: i64,
+    verification_code: String,
+    agent_subject: String,
+    action_kind: String,
+    payload_json: Value,
+    challenge_text: String,
+    expected_answer: String,
+    generator_version: String,
+    generator_seed: i64,
+    status: String,
+    attempt_count: i64,
+    max_attempts: i64,
+    expires_at: chrono::DateTime<Utc>,
+    verified_at: Option<chrono::DateTime<Utc>>,
+    created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, SurrealValue)]
+struct VerificationFailureStreakRow {
+    agent_subject: String,
+    consecutive_failures: i64,
+    last_failure_at: Option<chrono::DateTime<Utc>>,
+    last_success_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, SurrealValue)]
+struct VerificationCodeRow {
+    verification_code: String,
+}
+
+impl TryFrom<VerificationChallengeRow> for VerificationChallengeRecord {
+    type Error = ForumError;
+
+    fn try_from(row: VerificationChallengeRow) -> Result<Self, Self::Error> {
+        Ok(VerificationChallengeRecord {
+            id: row.challenge_id,
+            verification_code: row.verification_code,
+            agent_subject: row.agent_subject,
+            action_kind: SurrealService::parse_verification_action_kind(&row.action_kind)?,
+            payload_json: row.payload_json,
+            challenge_text: row.challenge_text,
+            expected_answer: row.expected_answer,
+            generator_version: row.generator_version,
+            generator_seed: row.generator_seed,
+            status: SurrealService::parse_verification_challenge_status(&row.status)?,
+            attempt_count: row.attempt_count,
+            max_attempts: row.max_attempts,
+            expires_at: row.expires_at,
+            verified_at: row.verified_at,
+            created_at: row.created_at,
+        })
+    }
+}
+
+impl From<VerificationFailureStreakRow> for VerificationFailureStreak {
+    fn from(row: VerificationFailureStreakRow) -> Self {
+        VerificationFailureStreak {
+            agent_subject: row.agent_subject,
+            consecutive_failures: row.consecutive_failures,
+            last_failure_at: row.last_failure_at,
+            last_success_at: row.last_success_at,
+        }
     }
 }
 
@@ -124,6 +192,72 @@ impl SurrealService {
         let msg = err.to_string();
         msg.contains("401 Unauthorized") || msg.contains("status client error (401")
     }
+
+    fn stable_numeric_id(value: &str) -> i64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        let id = (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64;
+        if id == 0 {
+            1
+        } else {
+            id
+        }
+    }
+
+    fn verification_action_kind_value(kind: VerificationActionKind) -> &'static str {
+        kind.as_str()
+    }
+
+    fn parse_verification_action_kind(value: &str) -> Result<VerificationActionKind, ForumError> {
+        match value {
+            "topic_create" => Ok(VerificationActionKind::TopicCreate),
+            "reply_create" => Ok(VerificationActionKind::ReplyCreate),
+            other => Err(ForumError::Internal(format!(
+                "unknown verification action kind in surreal row: {other}"
+            ))),
+        }
+    }
+
+    fn verification_challenge_status_value(status: VerificationChallengeStatus) -> &'static str {
+        match status {
+            VerificationChallengeStatus::Pending => "pending",
+            VerificationChallengeStatus::Verified => "verified",
+            VerificationChallengeStatus::Expired => "expired",
+            VerificationChallengeStatus::Failed => "failed",
+        }
+    }
+
+    fn parse_verification_challenge_status(
+        value: &str,
+    ) -> Result<VerificationChallengeStatus, ForumError> {
+        match value {
+            "pending" => Ok(VerificationChallengeStatus::Pending),
+            "verified" => Ok(VerificationChallengeStatus::Verified),
+            "expired" => Ok(VerificationChallengeStatus::Expired),
+            "failed" => Ok(VerificationChallengeStatus::Failed),
+            other => Err(ForumError::Internal(format!(
+                "unknown verification challenge status in surreal row: {other}"
+            ))),
+        }
+    }
+
+    fn is_duplicate_verification_create_message(message: &str) -> bool {
+        let lower = message.to_ascii_lowercase();
+        (message.contains("idx_agent_verification_challenges_code")
+            || message.contains("agent_verification_challenges:"))
+            && (lower.contains("already contains")
+                || lower.contains("already exists")
+                || lower.contains("duplicate"))
+    }
+
+    fn map_verification_create_error(err: surrealdb::Error) -> ForumError {
+        let message = err.to_string();
+        if Self::is_duplicate_verification_create_message(&message) {
+            ForumError::Validation("duplicate_verification_code".into())
+        } else {
+            ForumError::Internal(message)
+        }
+    }
 }
 
 impl ForumService for SurrealService {
@@ -149,36 +283,362 @@ impl ForumService for SurrealService {
         &self,
         input: VerificationChallengeUpsert,
     ) -> Result<VerificationChallengeRecord, ForumError> {
-        Ok(VerificationChallengeRecord {
-            id: 0,
-            verification_code: input.verification_code,
-            agent_subject: input.agent_subject,
-            action_kind: input.action_kind,
-            payload_json: input.payload_json,
-            challenge_text: input.challenge_text,
-            expected_answer: input.expected_answer,
-            generator_version: input.generator_version,
-            generator_seed: input.generator_seed,
-            status: input.status,
-            attempt_count: input.attempt_count,
-            max_attempts: input.max_attempts,
-            expires_at: input.expires_at,
-            verified_at: input.verified_at,
-            created_at: Utc::now(),
-        })
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let verification_code = input.verification_code;
+        let precheck_query = r#"
+                                SELECT verification_code
+                                FROM agent_verification_challenges
+                                WHERE verification_code = $verification_code
+                                LIMIT 1;
+                                "#;
+        let mut existing = match rt.block_on(async {
+            self.client
+                .query(precheck_query)
+                .bind(("verification_code", verification_code.clone()))
+                .await
+        }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "create_verification_challenge precheck reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(precheck_query)
+                        .bind(("verification_code", verification_code.clone()))
+                        .await
+                }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "create_verification_challenge precheck still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(precheck_query)
+                                .bind(("verification_code", verification_code.clone()))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
+        let existing_rows: Vec<VerificationCodeRow> = existing.take(0).map_err(|e| {
+            ForumError::Internal(format!(
+                "create_verification_challenge precheck response decode failed: {e}"
+            ))
+        })?;
+        if !existing_rows.is_empty() {
+            return Err(ForumError::Validation("duplicate_verification_code".into()));
+        }
+
+        let challenge_id = Self::stable_numeric_id(&verification_code);
+        let action_kind = Self::verification_action_kind_value(input.action_kind).to_string();
+        let status = Self::verification_challenge_status_value(input.status).to_string();
+        let agent_subject = input.agent_subject;
+        let payload_json = input.payload_json;
+        let challenge_text = input.challenge_text;
+        let expected_answer = input.expected_answer;
+        let generator_version = input.generator_version;
+        let generator_seed = input.generator_seed;
+        let attempt_count = input.attempt_count;
+        let max_attempts = input.max_attempts;
+        let expires_at = input.expires_at;
+        let verified_at = input.verified_at;
+        let created_at = Utc::now();
+
+        let create_query = r#"
+                                CREATE type::thing('agent_verification_challenges', $verification_code) CONTENT {
+                                    challenge_id: $challenge_id,
+                                    verification_code: $verification_code,
+                                    agent_subject: $agent_subject,
+                                    action_kind: $action_kind,
+                                    payload_json: $payload_json,
+                                    challenge_text: $challenge_text,
+                                    expected_answer: $expected_answer,
+                                    generator_version: $generator_version,
+                                    generator_seed: $generator_seed,
+                                    status: $status,
+                                    attempt_count: $attempt_count,
+                                    max_attempts: $max_attempts,
+                                    expires_at: $expires_at,
+                                    verified_at: $verified_at,
+                                    created_at: $created_at
+                                } RETURN challenge_id, verification_code, agent_subject, action_kind, payload_json, challenge_text, expected_answer, generator_version, generator_seed, status, attempt_count, max_attempts, expires_at, verified_at, created_at;
+                                "#;
+        let mut response = match rt.block_on(async {
+            self.client
+                .query(create_query)
+                .bind(("challenge_id", challenge_id))
+                .bind(("verification_code", verification_code.clone()))
+                .bind(("agent_subject", agent_subject.clone()))
+                .bind(("action_kind", action_kind.clone()))
+                .bind(("payload_json", payload_json.clone()))
+                .bind(("challenge_text", challenge_text.clone()))
+                .bind(("expected_answer", expected_answer.clone()))
+                .bind(("generator_version", generator_version.clone()))
+                .bind(("generator_seed", generator_seed))
+                .bind(("status", status.clone()))
+                .bind(("attempt_count", attempt_count))
+                .bind(("max_attempts", max_attempts))
+                .bind(("expires_at", expires_at))
+                .bind(("verified_at", verified_at))
+                .bind(("created_at", created_at))
+                .await
+        }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "create_verification_challenge create reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(create_query)
+                        .bind(("challenge_id", challenge_id))
+                        .bind(("verification_code", verification_code.clone()))
+                        .bind(("agent_subject", agent_subject.clone()))
+                        .bind(("action_kind", action_kind.clone()))
+                        .bind(("payload_json", payload_json.clone()))
+                        .bind(("challenge_text", challenge_text.clone()))
+                        .bind(("expected_answer", expected_answer.clone()))
+                        .bind(("generator_version", generator_version.clone()))
+                        .bind(("generator_seed", generator_seed))
+                        .bind(("status", status.clone()))
+                        .bind(("attempt_count", attempt_count))
+                        .bind(("max_attempts", max_attempts))
+                        .bind(("expires_at", expires_at))
+                        .bind(("verified_at", verified_at))
+                        .bind(("created_at", created_at))
+                        .await
+                }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "create_verification_challenge create still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(Self::map_verification_create_error)?;
+                        rt.block_on(async {
+                            fresh
+                                .query(create_query)
+                                .bind(("challenge_id", challenge_id))
+                                .bind(("verification_code", verification_code.clone()))
+                                .bind(("agent_subject", agent_subject.clone()))
+                                .bind(("action_kind", action_kind.clone()))
+                                .bind(("payload_json", payload_json.clone()))
+                                .bind(("challenge_text", challenge_text.clone()))
+                                .bind(("expected_answer", expected_answer.clone()))
+                                .bind(("generator_version", generator_version.clone()))
+                                .bind(("generator_seed", generator_seed))
+                                .bind(("status", status.clone()))
+                                .bind(("attempt_count", attempt_count))
+                                .bind(("max_attempts", max_attempts))
+                                .bind(("expires_at", expires_at))
+                                .bind(("verified_at", verified_at))
+                                .bind(("created_at", created_at))
+                                .await
+                        })
+                        .map_err(Self::map_verification_create_error)?
+                    }
+                    Err(retry_err) => return Err(Self::map_verification_create_error(retry_err)),
+                }
+            }
+            Err(err) => return Err(Self::map_verification_create_error(err)),
+        };
+        let row: Option<VerificationChallengeRow> = response.take(0).map_err(|e| {
+            ForumError::Internal(format!(
+                "create_verification_challenge create response decode failed: {e}"
+            ))
+        })?;
+        let row = row.ok_or_else(|| {
+            ForumError::Internal("missing verification challenge row after create".into())
+        })?;
+        row.try_into()
     }
 
     fn get_verification_challenge(
         &self,
-        _verification_code: &str,
+        verification_code: &str,
     ) -> Result<Option<VerificationChallengeRecord>, ForumError> {
-        Ok(None)
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let query = r#"
+                                SELECT challenge_id, verification_code, agent_subject, action_kind, payload_json, challenge_text, expected_answer, generator_version, generator_seed, status, attempt_count, max_attempts, expires_at, verified_at, created_at
+                                FROM agent_verification_challenges
+                                WHERE verification_code = $verification_code
+                                LIMIT 1;
+                                "#;
+        let verification_code = verification_code.to_string();
+        let mut response = match rt.block_on(async {
+            self.client
+                .query(query)
+                .bind(("verification_code", verification_code.clone()))
+                .await
+        }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "get_verification_challenge reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(query)
+                        .bind(("verification_code", verification_code.clone()))
+                        .await
+                }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "get_verification_challenge still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(query)
+                                .bind(("verification_code", verification_code.clone()))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
+        let row: Option<VerificationChallengeRow> = response.take(0).map_err(|e| {
+            ForumError::Internal(format!(
+                "get_verification_challenge response decode failed: {e}"
+            ))
+        })?;
+        row.map(TryInto::try_into).transpose()
     }
 
     fn save_verification_challenge(
         &self,
-        _challenge: VerificationChallengeRecord,
+        challenge: VerificationChallengeRecord,
     ) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let challenge_id = challenge.id;
+        let verification_code = challenge.verification_code.clone();
+        let agent_subject = challenge.agent_subject.clone();
+        let action_kind = Self::verification_action_kind_value(challenge.action_kind).to_string();
+        let payload_json = challenge.payload_json.clone();
+        let challenge_text = challenge.challenge_text.clone();
+        let expected_answer = challenge.expected_answer.clone();
+        let generator_version = challenge.generator_version.clone();
+        let generator_seed = challenge.generator_seed;
+        let status = Self::verification_challenge_status_value(challenge.status).to_string();
+        let attempt_count = challenge.attempt_count;
+        let max_attempts = challenge.max_attempts;
+        let expires_at = challenge.expires_at;
+        let verified_at = challenge.verified_at;
+        let created_at = challenge.created_at;
+        let query = r#"
+                        UPSERT type::thing('agent_verification_challenges', $verification_code) CONTENT {
+                            challenge_id: $challenge_id,
+                            verification_code: $verification_code,
+                            agent_subject: $agent_subject,
+                            action_kind: $action_kind,
+                            payload_json: $payload_json,
+                            challenge_text: $challenge_text,
+                            expected_answer: $expected_answer,
+                            generator_version: $generator_version,
+                            generator_seed: $generator_seed,
+                            status: $status,
+                            attempt_count: $attempt_count,
+                            max_attempts: $max_attempts,
+                            expires_at: $expires_at,
+                            verified_at: $verified_at,
+                            created_at: $created_at
+                        };
+                        "#;
+        match rt.block_on(async {
+            self.client
+                .query(query)
+                .bind(("challenge_id", challenge_id))
+                .bind(("verification_code", verification_code.clone()))
+                .bind(("agent_subject", agent_subject.clone()))
+                .bind(("action_kind", action_kind.clone()))
+                .bind(("payload_json", payload_json.clone()))
+                .bind(("challenge_text", challenge_text.clone()))
+                .bind(("expected_answer", expected_answer.clone()))
+                .bind(("generator_version", generator_version.clone()))
+                .bind(("generator_seed", generator_seed))
+                .bind(("status", status.clone()))
+                .bind(("attempt_count", attempt_count))
+                .bind(("max_attempts", max_attempts))
+                .bind(("expires_at", expires_at))
+                .bind(("verified_at", verified_at))
+                .bind(("created_at", created_at))
+                .await
+        }) {
+            Ok(_) => {}
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "save_verification_challenge reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(query)
+                        .bind(("challenge_id", challenge_id))
+                        .bind(("verification_code", verification_code.clone()))
+                        .bind(("agent_subject", agent_subject.clone()))
+                        .bind(("action_kind", action_kind.clone()))
+                        .bind(("payload_json", payload_json.clone()))
+                        .bind(("challenge_text", challenge_text.clone()))
+                        .bind(("expected_answer", expected_answer.clone()))
+                        .bind(("generator_version", generator_version.clone()))
+                        .bind(("generator_seed", generator_seed))
+                        .bind(("status", status.clone()))
+                        .bind(("attempt_count", attempt_count))
+                        .bind(("max_attempts", max_attempts))
+                        .bind(("expires_at", expires_at))
+                        .bind(("verified_at", verified_at))
+                        .bind(("created_at", created_at))
+                        .await
+                }) {
+                    Ok(_) => {}
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "save_verification_challenge still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(query)
+                                .bind(("challenge_id", challenge_id))
+                                .bind(("verification_code", verification_code.clone()))
+                                .bind(("agent_subject", agent_subject.clone()))
+                                .bind(("action_kind", action_kind.clone()))
+                                .bind(("payload_json", payload_json.clone()))
+                                .bind(("challenge_text", challenge_text.clone()))
+                                .bind(("expected_answer", expected_answer.clone()))
+                                .bind(("generator_version", generator_version.clone()))
+                                .bind(("generator_seed", generator_seed))
+                                .bind(("status", status.clone()))
+                                .bind(("attempt_count", attempt_count))
+                                .bind(("max_attempts", max_attempts))
+                                .bind(("expires_at", expires_at))
+                                .bind(("verified_at", verified_at))
+                                .bind(("created_at", created_at))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?;
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        }
         Ok(())
     }
 
@@ -186,16 +646,129 @@ impl ForumService for SurrealService {
         &self,
         agent_subject: &str,
     ) -> Result<VerificationFailureStreak, ForumError> {
-        Ok(VerificationFailureStreak {
-            agent_subject: agent_subject.to_string(),
-            ..VerificationFailureStreak::default()
-        })
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let query = r#"
+                                SELECT agent_subject, consecutive_failures, last_failure_at, last_success_at
+                                FROM agent_verification_failures
+                                WHERE agent_subject = $agent_subject
+                                LIMIT 1;
+                                "#;
+        let agent_subject = agent_subject.to_string();
+        let mut response = match rt.block_on(async {
+            self.client
+                .query(query)
+                .bind(("agent_subject", agent_subject.clone()))
+                .await
+        }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "get_verification_failure_streak reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(query)
+                        .bind(("agent_subject", agent_subject.clone()))
+                        .await
+                }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "get_verification_failure_streak still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(query)
+                                .bind(("agent_subject", agent_subject.clone()))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
+        let row: Option<VerificationFailureStreakRow> = response.take(0).map_err(|e| {
+            ForumError::Internal(format!(
+                "get_verification_failure_streak response decode failed: {e}"
+            ))
+        })?;
+        Ok(row
+            .map(VerificationFailureStreak::from)
+            .unwrap_or_else(|| VerificationFailureStreak {
+                agent_subject: agent_subject.to_string(),
+                ..VerificationFailureStreak::default()
+            }))
     }
 
     fn save_verification_failure_streak(
         &self,
-        _streak: VerificationFailureStreak,
+        streak: VerificationFailureStreak,
     ) -> Result<(), ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let agent_subject = streak.agent_subject.clone();
+        let consecutive_failures = streak.consecutive_failures;
+        let last_failure_at = streak.last_failure_at;
+        let last_success_at = streak.last_success_at;
+        let query = r#"
+                        UPSERT type::thing('agent_verification_failures', $agent_subject) CONTENT {
+                            agent_subject: $agent_subject,
+                            consecutive_failures: $consecutive_failures,
+                            last_failure_at: $last_failure_at,
+                            last_success_at: $last_success_at
+                        };
+                        "#;
+        match rt.block_on(async {
+            self.client
+                .query(query)
+                .bind(("agent_subject", agent_subject.clone()))
+                .bind(("consecutive_failures", consecutive_failures))
+                .bind(("last_failure_at", last_failure_at))
+                .bind(("last_success_at", last_success_at))
+                .await
+        }) {
+            Ok(_) => {}
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "save_verification_failure_streak reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(query)
+                        .bind(("agent_subject", agent_subject.clone()))
+                        .bind(("consecutive_failures", consecutive_failures))
+                        .bind(("last_failure_at", last_failure_at))
+                        .bind(("last_success_at", last_success_at))
+                        .await
+                }) {
+                    Ok(_) => {}
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "save_verification_failure_streak still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(query)
+                                .bind(("agent_subject", agent_subject.clone()))
+                                .bind(("consecutive_failures", consecutive_failures))
+                                .bind(("last_failure_at", last_failure_at))
+                                .bind(("last_success_at", last_success_at))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?;
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        }
         Ok(())
     }
 
@@ -3835,5 +4408,112 @@ impl ForumService for SurrealService {
         })
         .map_err(|e| ForumError::Internal(e.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SurrealService, VerificationChallengeRow, VerificationFailureStreakRow};
+    use crate::agent::verification::{
+        VerificationActionKind, VerificationChallengeRecord, VerificationChallengeStatus,
+        VerificationFailureStreak,
+    };
+    use crate::services::ForumError;
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+
+    #[test]
+    fn verification_challenge_row_maps_to_domain_record() {
+        let now = Utc::now();
+        let row = VerificationChallengeRow {
+            challenge_id: 42,
+            verification_code: "verify-42".into(),
+            agent_subject: "agent:demo".into(),
+            action_kind: "reply_create".into(),
+            payload_json: json!({"topic_id": 7}),
+            challenge_text: "1 + 1".into(),
+            expected_answer: "2.00".into(),
+            generator_version: "v1".into(),
+            generator_seed: 17,
+            status: "verified".into(),
+            attempt_count: 1,
+            max_attempts: 3,
+            expires_at: now + Duration::minutes(5),
+            verified_at: Some(now),
+            created_at: now - Duration::minutes(1),
+        };
+
+        let mapped: VerificationChallengeRecord = row.try_into().unwrap();
+        assert_eq!(mapped.id, 42);
+        assert_eq!(mapped.verification_code, "verify-42");
+        assert_eq!(mapped.agent_subject, "agent:demo");
+        assert_eq!(mapped.action_kind, VerificationActionKind::ReplyCreate);
+        assert_eq!(mapped.payload_json, json!({"topic_id": 7}));
+        assert_eq!(mapped.status, VerificationChallengeStatus::Verified);
+    }
+
+    #[test]
+    fn verification_failure_streak_row_maps_to_domain_record() {
+        let now = Utc::now();
+        let row = VerificationFailureStreakRow {
+            agent_subject: "agent:demo".into(),
+            consecutive_failures: 4,
+            last_failure_at: Some(now),
+            last_success_at: Some(now - Duration::minutes(10)),
+        };
+
+        let mapped: VerificationFailureStreak = row.into();
+        assert_eq!(mapped.agent_subject, "agent:demo");
+        assert_eq!(mapped.consecutive_failures, 4);
+        assert_eq!(mapped.last_failure_at, Some(now));
+    }
+
+    #[test]
+    fn duplicate_verification_create_errors_are_classified_as_validation() {
+        let duplicate = surrealdb::Error::thrown(
+            "Database index `idx_agent_verification_challenges_code` already contains verify-42"
+                .to_string(),
+        );
+        let mapped = SurrealService::map_verification_create_error(duplicate);
+        assert!(matches!(
+            mapped,
+            ForumError::Validation(ref message) if message == "duplicate_verification_code"
+        ));
+
+        let duplicate_record = surrealdb::Error::thrown(
+            "The record agent_verification_challenges:verify-42 already exists".to_string(),
+        );
+        let mapped = SurrealService::map_verification_create_error(duplicate_record);
+        assert!(matches!(
+            mapped,
+            ForumError::Validation(ref message) if message == "duplicate_verification_code"
+        ));
+    }
+
+    #[test]
+    fn invalid_verification_status_in_row_returns_error() {
+        let now = Utc::now();
+        let row = VerificationChallengeRow {
+            challenge_id: 1,
+            verification_code: "verify-bad".into(),
+            agent_subject: "agent:demo".into(),
+            action_kind: "topic_create".into(),
+            payload_json: json!({}),
+            challenge_text: "1 + 1".into(),
+            expected_answer: "2.00".into(),
+            generator_version: "v1".into(),
+            generator_seed: 1,
+            status: "bad-status".into(),
+            attempt_count: 0,
+            max_attempts: 3,
+            expires_at: now,
+            verified_at: None,
+            created_at: now,
+        };
+
+        let error = VerificationChallengeRecord::try_from(row).unwrap_err();
+        assert!(
+            matches!(error, ForumError::Internal(message) if message.contains("unknown verification challenge status"))
+        );
     }
 }

@@ -1628,7 +1628,10 @@ impl ForumService for InMemoryService {
         verification_code: &str,
     ) -> ServiceResult<Option<VerificationChallengeRecord>> {
         let state = self.state.lock().unwrap();
-        Ok(state.verification_challenges.get(verification_code).cloned())
+        Ok(state
+            .verification_challenges
+            .get(verification_code)
+            .cloned())
     }
 
     fn save_verification_challenge(
@@ -3410,5 +3413,112 @@ impl ForumService for InMemoryService {
             .pm_drafts
             .get(&owner_id)
             .and_then(|entry| entry.get(&draft_id).cloned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ForumService, InMemoryService, VerificationChallengeUpsert};
+    use crate::agent::verification::{
+        VerificationActionKind, VerificationChallengeStatus, VerificationFailureStreak,
+    };
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+
+    #[test]
+    fn create_and_fetch_verification_challenge_round_trips() {
+        let service = InMemoryService::default();
+        let expires_at = Utc::now() + Duration::minutes(10);
+        let verified_at = Some(Utc::now());
+        let input = VerificationChallengeUpsert {
+            verification_code: "verify-abc123".into(),
+            agent_subject: "user:42".into(),
+            action_kind: VerificationActionKind::ReplyCreate,
+            payload_json: json!({
+                "topic_id": 99,
+                "body": "hello"
+            }),
+            challenge_text: "7 + 5".into(),
+            expected_answer: "12.00".into(),
+            generator_version: "v1".into(),
+            generator_seed: 77,
+            status: VerificationChallengeStatus::Verified,
+            attempt_count: 1,
+            max_attempts: 3,
+            expires_at,
+            verified_at,
+        };
+
+        let created = service.create_verification_challenge(input).unwrap();
+        let fetched = service
+            .get_verification_challenge("verify-abc123")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.verification_code, created.verification_code);
+        assert_eq!(fetched.agent_subject, created.agent_subject);
+        assert_eq!(fetched.action_kind, created.action_kind);
+        assert_eq!(fetched.payload_json, created.payload_json);
+        assert_eq!(fetched.challenge_text, created.challenge_text);
+        assert_eq!(fetched.expected_answer, created.expected_answer);
+        assert_eq!(fetched.generator_version, created.generator_version);
+        assert_eq!(fetched.generator_seed, created.generator_seed);
+        assert_eq!(fetched.status, created.status);
+        assert_eq!(fetched.attempt_count, created.attempt_count);
+        assert_eq!(fetched.max_attempts, created.max_attempts);
+        assert_eq!(fetched.expires_at, created.expires_at);
+        assert_eq!(fetched.verified_at, created.verified_at);
+        assert_eq!(fetched.created_at, created.created_at);
+    }
+
+    #[test]
+    fn verification_failure_streak_persists_updates() {
+        let service = InMemoryService::default();
+        let agent_subject = "agent:test";
+        let first_failure_at = Some(Utc::now() - Duration::minutes(5));
+        let last_success_at = Some(Utc::now() - Duration::minutes(1));
+
+        let initial = service
+            .get_verification_failure_streak(agent_subject)
+            .unwrap();
+        assert_eq!(initial.agent_subject, agent_subject);
+        assert_eq!(initial.consecutive_failures, 0);
+        assert_eq!(initial.last_failure_at, None);
+        assert_eq!(initial.last_success_at, None);
+
+        let updated = VerificationFailureStreak {
+            agent_subject: agent_subject.into(),
+            consecutive_failures: 2,
+            last_failure_at: first_failure_at,
+            last_success_at,
+        };
+
+        service
+            .save_verification_failure_streak(updated.clone())
+            .unwrap();
+
+        let fetched = service
+            .get_verification_failure_streak(agent_subject)
+            .unwrap();
+        assert_eq!(fetched.agent_subject, updated.agent_subject);
+        assert_eq!(fetched.consecutive_failures, updated.consecutive_failures);
+        assert_eq!(fetched.last_failure_at, updated.last_failure_at);
+        assert_eq!(fetched.last_success_at, updated.last_success_at);
+
+        let second_failure_at = Some(Utc::now());
+        let mutated = VerificationFailureStreak {
+            consecutive_failures: 3,
+            last_failure_at: second_failure_at,
+            ..fetched
+        };
+        service.save_verification_failure_streak(mutated).unwrap();
+
+        let refetched = service
+            .get_verification_failure_streak(agent_subject)
+            .unwrap();
+        assert_eq!(refetched.consecutive_failures, 3);
+        assert_eq!(refetched.last_failure_at, second_failure_at);
+        assert_eq!(refetched.last_success_at, last_success_at);
     }
 }

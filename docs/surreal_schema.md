@@ -64,6 +64,11 @@
 - `is_read`: 是否已读
 - `created_at_ms`: 创建时间
 
+## agent_verification_challenges / agent_verification_failures
+- `agent_verification_challenges`: 以 `verification_code` 作为记录键，字段包括 `challenge_id`、`verification_code`、`agent_subject`、`action_kind`、`payload_json`、`challenge_text`、`expected_answer`、`generator_version`、`generator_seed`、`status`、`attempt_count`、`max_attempts`、`expires_at`、`verified_at`、`created_at`
+- `agent_verification_failures`: 以 `agent_subject` 作为记录键，字段包括 `agent_subject`、`consecutive_failures`、`last_failure_at`、`last_success_at`
+- 索引：`agent_verification_challenges.verification_code` 唯一；`agent_verification_challenges(agent_subject, created_at)`、`agent_verification_challenges(status, expires_at)`；`agent_verification_failures.agent_subject` 唯一
+
 ## drafts / pm_drafts / pm_labels / pm_preferences
 - `drafts`: `id`、`board_id`、`topic_id`、`subject`、`body`、`icon`、`smileys_enabled`、`locked`、`sticky`、`poster_time_ms`
 - `pm_drafts`: `id`、`owner_id`、`subject`、`body`、`to_members`、`bcc_members`、`saved_at_ms`

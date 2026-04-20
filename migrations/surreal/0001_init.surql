@@ -77,6 +77,34 @@ DEFINE INDEX idx_attachments_owner ON TABLE attachments COLUMNS owner, created_a
 DEFINE TABLE notifications SCHEMALESS;
 DEFINE INDEX idx_notifications_user ON TABLE notifications COLUMNS user, created_at_ms;
 
+-- Agent verification
+DEFINE TABLE agent_verification_challenges SCHEMAFULL;
+DEFINE FIELD challenge_id       ON TABLE agent_verification_challenges TYPE int;
+DEFINE FIELD verification_code  ON TABLE agent_verification_challenges TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD agent_subject      ON TABLE agent_verification_challenges TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD action_kind        ON TABLE agent_verification_challenges TYPE string ASSERT $value INSIDE ["topic_create", "reply_create"];
+DEFINE FIELD payload_json       ON TABLE agent_verification_challenges TYPE any;
+DEFINE FIELD challenge_text     ON TABLE agent_verification_challenges TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD expected_answer    ON TABLE agent_verification_challenges TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD generator_version  ON TABLE agent_verification_challenges TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD generator_seed     ON TABLE agent_verification_challenges TYPE int;
+DEFINE FIELD status             ON TABLE agent_verification_challenges TYPE string ASSERT $value INSIDE ["pending", "verified", "expired", "failed"];
+DEFINE FIELD attempt_count      ON TABLE agent_verification_challenges TYPE int;
+DEFINE FIELD max_attempts       ON TABLE agent_verification_challenges TYPE int ASSERT $value > 0;
+DEFINE FIELD expires_at         ON TABLE agent_verification_challenges TYPE datetime;
+DEFINE FIELD verified_at        ON TABLE agent_verification_challenges TYPE option<datetime>;
+DEFINE FIELD created_at         ON TABLE agent_verification_challenges TYPE datetime;
+DEFINE INDEX idx_agent_verification_challenges_code ON TABLE agent_verification_challenges COLUMNS verification_code UNIQUE;
+DEFINE INDEX idx_agent_verification_challenges_subject ON TABLE agent_verification_challenges COLUMNS agent_subject, created_at;
+DEFINE INDEX idx_agent_verification_challenges_status_expires ON TABLE agent_verification_challenges COLUMNS status, expires_at;
+
+DEFINE TABLE agent_verification_failures SCHEMAFULL;
+DEFINE FIELD agent_subject         ON TABLE agent_verification_failures TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD consecutive_failures  ON TABLE agent_verification_failures TYPE int;
+DEFINE FIELD last_failure_at       ON TABLE agent_verification_failures TYPE option<datetime>;
+DEFINE FIELD last_success_at       ON TABLE agent_verification_failures TYPE option<datetime>;
+DEFINE INDEX idx_agent_verification_failures_subject ON TABLE agent_verification_failures COLUMNS agent_subject UNIQUE;
+
 DEFINE TABLE drafts SCHEMALESS;
 DEFINE INDEX idx_drafts_owner ON TABLE drafts COLUMNS id, board_id, topic_id, poster_time_ms;
 
