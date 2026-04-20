@@ -1,3 +1,5 @@
+extern crate self as btc_forum_rust;
+
 pub mod admin;
 pub mod attachments;
 pub mod auth;
@@ -53,3 +55,10 @@ pub mod surreal;
 pub mod tasks;
 pub mod templates;
 pub mod who;
+
+#[path = "agent/verification.rs"]
+pub mod verification;
+
+pub mod agent {
+    pub use super::verification;
+}

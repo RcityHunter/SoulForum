@@ -5,6 +5,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
+use crate::agent::verification::{
+    VerificationActionKind, VerificationChallengeRecord, VerificationChallengeStatus,
+    VerificationFailureStreak,
+};
+
 pub mod surreal;
 
 pub type ServiceResult<T> = Result<T, ForumError>;
@@ -691,6 +696,23 @@ pub struct AnnouncementResult {
     pub recipients: usize,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VerificationChallengeUpsert {
+    pub verification_code: String,
+    pub agent_subject: String,
+    pub action_kind: VerificationActionKind,
+    pub payload_json: Value,
+    pub challenge_text: String,
+    pub expected_answer: String,
+    pub generator_version: String,
+    pub generator_seed: i64,
+    pub status: VerificationChallengeStatus,
+    pub attempt_count: i64,
+    pub max_attempts: i64,
+    pub expires_at: DateTime<Utc>,
+    pub verified_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionCheckMode {
     Get,
@@ -703,6 +725,26 @@ pub trait ForumService {
     fn load_template(&self, ctx: &mut ForumContext, template: &str) -> ServiceResult<()>;
     fn call_hook(&self, ctx: &mut ForumContext, hook: &str) -> ServiceResult<()>;
     fn get_notify_prefs(&self, user_id: i64) -> ServiceResult<NotifyPrefs>;
+    fn create_verification_challenge(
+        &self,
+        input: VerificationChallengeUpsert,
+    ) -> ServiceResult<VerificationChallengeRecord>;
+    fn get_verification_challenge(
+        &self,
+        verification_code: &str,
+    ) -> ServiceResult<Option<VerificationChallengeRecord>>;
+    fn save_verification_challenge(
+        &self,
+        challenge: VerificationChallengeRecord,
+    ) -> ServiceResult<()>;
+    fn get_verification_failure_streak(
+        &self,
+        agent_subject: &str,
+    ) -> ServiceResult<VerificationFailureStreak>;
+    fn save_verification_failure_streak(
+        &self,
+        streak: VerificationFailureStreak,
+    ) -> ServiceResult<()>;
     fn boards_allowed_to(
         &self,
         ctx: &ForumContext,
@@ -993,8 +1035,11 @@ struct InMemoryState {
     topics: HashMap<i64, TopicPostingContext>,
     messages: HashMap<i64, MessageEditData>,
     attachments: HashMap<i64, AttachmentRecord>,
+    verification_challenges: HashMap<String, VerificationChallengeRecord>,
+    verification_failure_streaks: HashMap<String, VerificationFailureStreak>,
     next_msg_id: i64,
     next_attach_id: i64,
+    next_verification_challenge_id: i64,
     attachment_dirs: HashMap<i64, (i64, i64)>, // dir_id -> (size, files)
     current_dir: i64,
     drafts: HashMap<i64, DraftStorage>,
@@ -1145,6 +1190,9 @@ impl InMemoryService {
             },
         );
         state.next_attach_id = 11;
+        state.verification_challenges = HashMap::new();
+        state.verification_failure_streaks = HashMap::new();
+        state.next_verification_challenge_id = 1;
         state.attachment_dirs.insert(
             1,
             (
@@ -1537,6 +1585,87 @@ impl ForumService for InMemoryService {
             .unwrap_or(NotifyPrefs {
                 msg_auto_notify: false,
             }))
+    }
+
+    fn create_verification_challenge(
+        &self,
+        input: VerificationChallengeUpsert,
+    ) -> ServiceResult<VerificationChallengeRecord> {
+        let mut state = self.state.lock().unwrap();
+        if state
+            .verification_challenges
+            .contains_key(&input.verification_code)
+        {
+            return Err(ForumError::Validation("duplicate_verification_code".into()));
+        }
+        let id = state.next_verification_challenge_id;
+        state.next_verification_challenge_id += 1;
+        let record = VerificationChallengeRecord {
+            id,
+            verification_code: input.verification_code,
+            agent_subject: input.agent_subject,
+            action_kind: input.action_kind,
+            payload_json: input.payload_json,
+            challenge_text: input.challenge_text,
+            expected_answer: input.expected_answer,
+            generator_version: input.generator_version,
+            generator_seed: input.generator_seed,
+            status: input.status,
+            attempt_count: input.attempt_count,
+            max_attempts: input.max_attempts,
+            expires_at: input.expires_at,
+            verified_at: input.verified_at,
+            created_at: Utc::now(),
+        };
+        state
+            .verification_challenges
+            .insert(record.verification_code.clone(), record.clone());
+        Ok(record)
+    }
+
+    fn get_verification_challenge(
+        &self,
+        verification_code: &str,
+    ) -> ServiceResult<Option<VerificationChallengeRecord>> {
+        let state = self.state.lock().unwrap();
+        Ok(state.verification_challenges.get(verification_code).cloned())
+    }
+
+    fn save_verification_challenge(
+        &self,
+        challenge: VerificationChallengeRecord,
+    ) -> ServiceResult<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .verification_challenges
+            .insert(challenge.verification_code.clone(), challenge);
+        Ok(())
+    }
+
+    fn get_verification_failure_streak(
+        &self,
+        agent_subject: &str,
+    ) -> ServiceResult<VerificationFailureStreak> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .verification_failure_streaks
+            .get(agent_subject)
+            .cloned()
+            .unwrap_or_else(|| VerificationFailureStreak {
+                agent_subject: agent_subject.to_string(),
+                ..VerificationFailureStreak::default()
+            }))
+    }
+
+    fn save_verification_failure_streak(
+        &self,
+        streak: VerificationFailureStreak,
+    ) -> ServiceResult<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .verification_failure_streaks
+            .insert(streak.agent_subject.clone(), streak);
+        Ok(())
     }
 
     fn boards_allowed_to(

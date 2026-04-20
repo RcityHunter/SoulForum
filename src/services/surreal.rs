@@ -9,7 +9,8 @@ use crate::services::{
     PersonalMessagePeer, PersonalMessageSearchQuery, PersonalMessageSendResult,
     PersonalMessageSummary, PmDraftRecord, PmPreferenceState, PollData, PostedMessage,
     QuoteContent, SendPersonalMessage, SessionCheckMode, TopicLogEntry, TopicNotificationSummary,
-    TopicPostingContext,
+    TopicPostingContext, VerificationChallengeRecord, VerificationChallengeUpsert,
+    VerificationFailureStreak,
 };
 use crate::surreal::{
     connect_from_env, create_board as surreal_create_board,
@@ -142,6 +143,60 @@ impl ForumService for SurrealService {
         Ok(NotifyPrefs {
             msg_auto_notify: false,
         })
+    }
+
+    fn create_verification_challenge(
+        &self,
+        input: VerificationChallengeUpsert,
+    ) -> Result<VerificationChallengeRecord, ForumError> {
+        Ok(VerificationChallengeRecord {
+            id: 0,
+            verification_code: input.verification_code,
+            agent_subject: input.agent_subject,
+            action_kind: input.action_kind,
+            payload_json: input.payload_json,
+            challenge_text: input.challenge_text,
+            expected_answer: input.expected_answer,
+            generator_version: input.generator_version,
+            generator_seed: input.generator_seed,
+            status: input.status,
+            attempt_count: input.attempt_count,
+            max_attempts: input.max_attempts,
+            expires_at: input.expires_at,
+            verified_at: input.verified_at,
+            created_at: Utc::now(),
+        })
+    }
+
+    fn get_verification_challenge(
+        &self,
+        _verification_code: &str,
+    ) -> Result<Option<VerificationChallengeRecord>, ForumError> {
+        Ok(None)
+    }
+
+    fn save_verification_challenge(
+        &self,
+        _challenge: VerificationChallengeRecord,
+    ) -> Result<(), ForumError> {
+        Ok(())
+    }
+
+    fn get_verification_failure_streak(
+        &self,
+        agent_subject: &str,
+    ) -> Result<VerificationFailureStreak, ForumError> {
+        Ok(VerificationFailureStreak {
+            agent_subject: agent_subject.to_string(),
+            ..VerificationFailureStreak::default()
+        })
+    }
+
+    fn save_verification_failure_streak(
+        &self,
+        _streak: VerificationFailureStreak,
+    ) -> Result<(), ForumError> {
+        Ok(())
     }
 
     fn boards_allowed_to(
