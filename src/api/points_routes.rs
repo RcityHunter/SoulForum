@@ -88,7 +88,7 @@ pub(crate) async fn points_leaderboard(
     let metric = points::parse_metric(params.metric.as_deref());
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
     let client = state.surreal.client();
-    match points::leaderboard(&client, metric.clone(), limit).await {
+    match points::leaderboard(client, metric.clone(), limit).await {
         Ok(leaderboard) => (
             StatusCode::OK,
             Json(PointsLeaderboardResponse {
@@ -101,8 +101,8 @@ pub(crate) async fn points_leaderboard(
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = reauth_from_env(&client).await;
-                match points::leaderboard(&client, metric.clone(), limit).await {
+                let _ = reauth_from_env(client).await;
+                match points::leaderboard(client, metric.clone(), limit).await {
                     Ok(leaderboard) => (
                         StatusCode::OK,
                         Json(PointsLeaderboardResponse {
@@ -176,7 +176,7 @@ pub(crate) async fn create_points_event_api(
         .into_response();
     }
     let client = state.surreal.client();
-    match points::create_points_event(&client, payload.clone()).await {
+    match points::create_points_event(client, payload.clone()).await {
         Ok((event, balance)) => (
             StatusCode::CREATED,
             Json(PointsEventCreateResponse {
@@ -187,8 +187,8 @@ pub(crate) async fn create_points_event_api(
         )
             .into_response(),
         Err(err) if is_auth_error(&err.to_string()) => {
-            let _ = reauth_from_env(&client).await;
-            match points::create_points_event(&client, payload.clone()).await {
+            let _ = reauth_from_env(client).await;
+            match points::create_points_event(client, payload.clone()).await {
                 Ok((event, balance)) => (
                     StatusCode::CREATED,
                     Json(PointsEventCreateResponse {
@@ -262,13 +262,13 @@ async fn load_balance_with_events(
     String,
 > {
     let client = state.surreal.client();
-    let balance = match points::get_points_balance(&client, member_id).await {
+    let balance = match points::get_points_balance(client, member_id).await {
         Ok(balance) => balance,
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = reauth_from_env(&client).await;
-                match points::get_points_balance(&client, member_id).await {
+                let _ = reauth_from_env(client).await;
+                match points::get_points_balance(client, member_id).await {
                     Ok(balance) => balance,
                     Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
                         let fresh = connect_from_env().await.map_err(|e| e.to_string())?;
@@ -283,13 +283,13 @@ async fn load_balance_with_events(
             }
         }
     };
-    let recent_events = match points::list_recent_points_events(&client, member_id, 20).await {
+    let recent_events = match points::list_recent_points_events(client, member_id, 20).await {
         Ok(events) => events,
         Err(err) => {
             let message = err.to_string();
             if is_auth_error(&message) {
-                let _ = reauth_from_env(&client).await;
-                match points::list_recent_points_events(&client, member_id, 20).await {
+                let _ = reauth_from_env(client).await;
+                match points::list_recent_points_events(client, member_id, 20).await {
                     Ok(events) => events,
                     Err(retry_err) if is_auth_error(&retry_err.to_string()) => {
                         let fresh = connect_from_env().await.map_err(|e| e.to_string())?;

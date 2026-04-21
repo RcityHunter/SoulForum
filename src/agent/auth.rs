@@ -22,10 +22,10 @@ fn has_scope_or_permission(claims: &AuthClaims, scope: &str, legacy_permissions:
     }
 
     let permissions = claims.effective_permissions();
-    permissions.iter().any(|permission| *permission == scope)
+    permissions.contains(&scope)
         || legacy_permissions
             .iter()
-            .any(|legacy| permissions.iter().any(|permission| *permission == *legacy))
+            .any(|legacy| permissions.contains(legacy))
 }
 
 pub fn require_scope<'a>(
