@@ -737,6 +737,11 @@ pub trait ForumService {
         &self,
         challenge: VerificationChallengeRecord,
     ) -> ServiceResult<()>;
+    fn consume_pending_verification_challenge(
+        &self,
+        verification_code: &str,
+        verified_at: DateTime<Utc>,
+    ) -> ServiceResult<Option<VerificationChallengeRecord>>;
     fn get_verification_failure_streak(
         &self,
         agent_subject: &str,
@@ -1643,6 +1648,30 @@ impl ForumService for InMemoryService {
             .verification_challenges
             .insert(challenge.verification_code.clone(), challenge);
         Ok(())
+    }
+
+    fn consume_pending_verification_challenge(
+        &self,
+        verification_code: &str,
+        verified_at: DateTime<Utc>,
+    ) -> ServiceResult<Option<VerificationChallengeRecord>> {
+        let mut state = self.state.lock().unwrap();
+        let Some(challenge) = state.verification_challenges.get_mut(verification_code) else {
+            return Ok(None);
+        };
+
+        if challenge.status != VerificationChallengeStatus::Pending {
+            return Ok(None);
+        }
+
+        if challenge.expires_at <= verified_at {
+            challenge.status = VerificationChallengeStatus::Expired;
+            return Ok(None);
+        }
+
+        challenge.status = VerificationChallengeStatus::Verified;
+        challenge.verified_at = Some(verified_at);
+        Ok(Some(challenge.clone()))
     }
 
     fn get_verification_failure_streak(
@@ -3470,6 +3499,82 @@ mod tests {
         assert_eq!(fetched.expires_at, created.expires_at);
         assert_eq!(fetched.verified_at, created.verified_at);
         assert_eq!(fetched.created_at, created.created_at);
+    }
+
+    #[test]
+    fn consume_pending_verification_challenge_allows_only_first_unexpired_consumer() {
+        let service = InMemoryService::default();
+        let verified_at = Utc::now();
+        service
+            .create_verification_challenge(VerificationChallengeUpsert {
+                verification_code: "verify-consume-once".into(),
+                agent_subject: "user:42".into(),
+                action_kind: VerificationActionKind::ReplyCreate,
+                payload_json: json!({
+                    "topic_id": 99,
+                    "body": "hello"
+                }),
+                challenge_text: "7 + 5".into(),
+                expected_answer: "12.00".into(),
+                generator_version: "v1".into(),
+                generator_seed: 77,
+                status: VerificationChallengeStatus::Pending,
+                attempt_count: 0,
+                max_attempts: 3,
+                expires_at: verified_at + Duration::minutes(10),
+                verified_at: None,
+            })
+            .unwrap();
+
+        let consumed = service
+            .consume_pending_verification_challenge("verify-consume-once", verified_at)
+            .unwrap()
+            .unwrap();
+        assert_eq!(consumed.status, VerificationChallengeStatus::Verified);
+        assert_eq!(consumed.verified_at, Some(verified_at));
+
+        let replay = service
+            .consume_pending_verification_challenge("verify-consume-once", verified_at)
+            .unwrap();
+        assert!(replay.is_none());
+    }
+
+    #[test]
+    fn consume_pending_verification_challenge_refuses_expired_pending_challenge() {
+        let service = InMemoryService::default();
+        let verified_at = Utc::now();
+        service
+            .create_verification_challenge(VerificationChallengeUpsert {
+                verification_code: "verify-expired-consume".into(),
+                agent_subject: "user:42".into(),
+                action_kind: VerificationActionKind::ReplyCreate,
+                payload_json: json!({
+                    "topic_id": 99,
+                    "body": "hello"
+                }),
+                challenge_text: "7 + 5".into(),
+                expected_answer: "12.00".into(),
+                generator_version: "v1".into(),
+                generator_seed: 77,
+                status: VerificationChallengeStatus::Pending,
+                attempt_count: 0,
+                max_attempts: 3,
+                expires_at: verified_at - Duration::seconds(1),
+                verified_at: None,
+            })
+            .unwrap();
+
+        let consumed = service
+            .consume_pending_verification_challenge("verify-expired-consume", verified_at)
+            .unwrap();
+        assert!(consumed.is_none());
+
+        let stored = service
+            .get_verification_challenge("verify-expired-consume")
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.status, VerificationChallengeStatus::Expired);
+        assert_eq!(stored.verified_at, None);
     }
 
     #[test]

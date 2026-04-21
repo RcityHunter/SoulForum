@@ -13,6 +13,7 @@ use btc_forum_shared::{ApiError, CreatePostPayload, CreateTopicPayload, ErrorCod
 
 use crate::agent::{
     auth::require_scope,
+    handlers::verify::{VerificationPrompt, VerificationRequiredData},
     request_id::RequestId,
     response::{err_response, ok_response},
 };
@@ -20,7 +21,6 @@ use crate::api::{
     auth::ensure_user_ctx,
     guards::{enforce_rate, ensure_board_access, validate_content},
     state::AppState,
-    utils::sanitize_input,
 };
 
 const TOPIC_READ_SCOPE: &str = "forum:topic:read";
@@ -95,6 +95,53 @@ fn reply_subject(topic_subject: &str, requested_subject: Option<&str>) -> String
         .unwrap_or_else(|| format!("Re: {topic_subject}"))
 }
 
+fn admin_bypass(is_admin: bool) -> bool {
+    is_admin
+}
+
+fn verification_prompt(
+    verification_code: &str,
+    challenge_text: &str,
+    expires_at: &str,
+    max_attempts: i64,
+    attempt_count: i64,
+) -> VerificationPrompt {
+    VerificationPrompt {
+        verification_code: verification_code.to_string(),
+        challenge_text: challenge_text.to_string(),
+        expires_at: expires_at.to_string(),
+        attempts_remaining: max_attempts - attempt_count,
+        instructions: "answer with exactly two decimal places".into(),
+    }
+}
+
+pub(crate) async fn create_topic_now(
+    state: &AppState,
+    payload: &CreateTopicPayload,
+    author: &str,
+) -> Result<(SurrealTopic, SurrealPost), surrealdb::Error> {
+    crate::agent::verification::create_topic_now(&state.surreal, payload, author).await
+}
+
+pub(crate) async fn create_reply_now(
+    state: &AppState,
+    topic_id: &str,
+    board_id: &str,
+    subject: &str,
+    body: &str,
+    author: &str,
+) -> Result<SurrealPost, surrealdb::Error> {
+    crate::agent::verification::create_reply_now(
+        &state.surreal,
+        topic_id,
+        board_id,
+        subject,
+        body,
+        author,
+    )
+    .await
+}
+
 pub async fn list(
     State(state): State<AppState>,
     claims: Option<AuthClaims>,
@@ -106,14 +153,14 @@ pub async fn list(
     let claims = match require_scope(&claims, TOPIC_READ_SCOPE, TOPIC_READ_LEGACY_PERMISSIONS) {
         Ok(claims) => claims,
         Err((status, Json(error))) => {
-            return err_response::<TopicListData>(status, &request_extensions, error)
+            return err_response::<TopicListData>(status, &request_extensions, error);
         }
     };
 
     let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err((status, Json(error))) => {
-            return err_response::<TopicListData>(status, &request_extensions, error)
+            return err_response::<TopicListData>(status, &request_extensions, error);
         }
     };
 
@@ -125,7 +172,7 @@ pub async fn list(
         Ok(topics) => topics,
         Err(err) => {
             error!(
-                error = %err,
+                error = ?err,
                 request_id = %request_id.0,
                 board_id = %params.board_id,
                 "agent v1 topic list failed"
@@ -163,14 +210,14 @@ pub async fn get(
     let claims = match require_scope(&claims, TOPIC_READ_SCOPE, TOPIC_READ_LEGACY_PERMISSIONS) {
         Ok(claims) => claims,
         Err((status, Json(error))) => {
-            return err_response::<TopicGetData>(status, &request_extensions, error)
+            return err_response::<TopicGetData>(status, &request_extensions, error);
         }
     };
 
     let (_user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err((status, Json(error))) => {
-            return err_response::<TopicGetData>(status, &request_extensions, error)
+            return err_response::<TopicGetData>(status, &request_extensions, error);
         }
     };
 
@@ -187,11 +234,11 @@ pub async fn get(
                         "topic_id": topic_id,
                     })),
                 },
-            )
+            );
         }
         Err(err) => {
             error!(
-                error = %err,
+                error = ?err,
                 request_id = %request_id.0,
                 topic_id = %topic_id,
                 "agent v1 topic get failed"
@@ -218,7 +265,7 @@ pub async fn get(
         Ok(posts) => posts,
         Err(err) => {
             error!(
-                error = %err,
+                error = ?err,
                 request_id = %request_id.0,
                 topic_id = %topic_id,
                 "agent v1 topic posts load failed"
@@ -258,14 +305,14 @@ pub async fn create(
     let claims = match require_scope(&claims, TOPIC_WRITE_SCOPE, TOPIC_WRITE_LEGACY_PERMISSIONS) {
         Ok(claims) => claims,
         Err((status, Json(error))) => {
-            return err_response::<TopicCreateData>(status, &request_extensions, error)
+            return err_response::<TopicCreateData>(status, &request_extensions, error);
         }
     };
 
     let (user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err((status, Json(error))) => {
-            return err_response::<TopicCreateData>(status, &request_extensions, error)
+            return err_response::<TopicCreateData>(status, &request_extensions, error);
         }
     };
 
@@ -284,51 +331,71 @@ pub async fn create(
         return err_response::<TopicCreateData>(status, &request_extensions, error);
     }
 
-    let author = user.name.clone();
-    let subject = sanitize_input(&payload.subject);
-    let body = sanitize_input(&payload.body);
-
-    let topic_result: Result<(SurrealTopic, SurrealPost), surrealdb::Error> = async {
-        let topic = state
-            .surreal
-            .create_topic(&payload.board_id, &subject, &author)
-            .await?;
-        let topic_id = topic.id.clone().unwrap_or_default();
-        let post = state
-            .surreal
-            .create_post_in_topic(&topic_id, &payload.board_id, &subject, &body, &author)
-            .await?;
-        Ok((topic, post))
+    if admin_bypass(ctx.user_info.is_admin) {
+        return match create_topic_now(&state, &payload, &user.name).await {
+            Ok((topic, first_post)) => ok_response(
+                StatusCode::CREATED,
+                &request_extensions,
+                TopicCreateData {
+                    topic: to_topic(topic),
+                    first_post: to_post(first_post),
+                },
+            ),
+            Err(err) => {
+                error!(
+                    error = %err,
+                    request_id = %request_id.0,
+                    board_id = %payload.board_id,
+                    "agent v1 topic create failed"
+                );
+                err_response::<TopicCreateData>(
+                    StatusCode::BAD_REQUEST,
+                    &request_extensions,
+                    ApiError {
+                        code: ErrorCode::Validation,
+                        message: "failed to create topic".to_string(),
+                        details: Some(serde_json::json!({
+                            "board_id": payload.board_id,
+                            "reason": err.to_string(),
+                        })),
+                    },
+                )
+            }
+        };
     }
-    .await;
 
-    match topic_result {
-        Ok((topic, first_post)) => ok_response(
-            StatusCode::CREATED,
+    match crate::agent::verification::issue_topic_challenge(
+        state.forum_service.clone(),
+        &claims.sub,
+        &payload,
+    )
+    .await
+    {
+        Ok(pending) => ok_response(
+            StatusCode::ACCEPTED,
             &request_extensions,
-            TopicCreateData {
-                topic: to_topic(topic),
-                first_post: to_post(first_post),
+            VerificationRequiredData {
+                verification_required: true,
+                verification: verification_prompt(
+                    &pending.verification_code,
+                    &pending.challenge_text,
+                    &pending.expires_at.to_rfc3339(),
+                    pending.max_attempts,
+                    pending.attempt_count,
+                ),
             },
         ),
         Err(err) => {
             error!(
-                error = %err,
+                error = ?err,
                 request_id = %request_id.0,
                 board_id = %payload.board_id,
-                "agent v1 topic create failed"
+                "agent v1 topic challenge failed"
             );
-            err_response::<TopicCreateData>(
-                StatusCode::BAD_REQUEST,
+            err_response::<VerificationRequiredData>(
+                StatusCode::INTERNAL_SERVER_ERROR,
                 &request_extensions,
-                ApiError {
-                    code: ErrorCode::Validation,
-                    message: "failed to create topic".to_string(),
-                    details: Some(serde_json::json!({
-                        "board_id": payload.board_id,
-                        "reason": err.to_string(),
-                    })),
-                },
+                err,
             )
         }
     }
@@ -345,14 +412,14 @@ pub async fn create_reply(
     let claims = match require_scope(&claims, REPLY_WRITE_SCOPE, REPLY_WRITE_LEGACY_PERMISSIONS) {
         Ok(claims) => claims,
         Err((status, Json(error))) => {
-            return err_response::<ReplyCreateData>(status, &request_extensions, error)
+            return err_response::<ReplyCreateData>(status, &request_extensions, error);
         }
     };
 
     let (user, ctx) = match ensure_user_ctx(&state, claims).await {
         Ok(value) => value,
         Err((status, Json(error))) => {
-            return err_response::<ReplyCreateData>(status, &request_extensions, error)
+            return err_response::<ReplyCreateData>(status, &request_extensions, error);
         }
     };
 
@@ -369,7 +436,7 @@ pub async fn create_reply(
                         "topic_id": payload.topic_id,
                     })),
                 },
-            )
+            );
         }
         Err(err) => {
             error!(
@@ -424,40 +491,79 @@ pub async fn create_reply(
         return err_response::<ReplyCreateData>(status, &request_extensions, error);
     }
 
-    let author = user.name.clone();
-    let subject = sanitize_input(&subject);
-    let body = sanitize_input(&payload.body);
-
-    match state
-        .surreal
-        .create_post_in_topic(&payload.topic_id, &topic.board_id, &subject, &body, &author)
+    if admin_bypass(ctx.user_info.is_admin) {
+        return match create_reply_now(
+            &state,
+            &payload.topic_id,
+            &topic.board_id,
+            &subject,
+            &payload.body,
+            &user.name,
+        )
         .await
+        {
+            Ok(post) => ok_response(
+                StatusCode::CREATED,
+                &request_extensions,
+                ReplyCreateData {
+                    post: to_post(post),
+                },
+            ),
+            Err(err) => {
+                error!(
+                    error = %err,
+                    request_id = %request_id.0,
+                    topic_id = %payload.topic_id,
+                    "agent v1 reply create failed"
+                );
+                err_response::<ReplyCreateData>(
+                    StatusCode::BAD_REQUEST,
+                    &request_extensions,
+                    ApiError {
+                        code: ErrorCode::Validation,
+                        message: "failed to create reply".to_string(),
+                        details: Some(serde_json::json!({
+                            "topic_id": payload.topic_id,
+                            "reason": err.to_string(),
+                        })),
+                    },
+                )
+            }
+        };
+    }
+
+    match crate::agent::verification::issue_reply_challenge(
+        state.forum_service.clone(),
+        &claims.sub,
+        &payload,
+    )
+    .await
     {
-        Ok(post) => ok_response(
-            StatusCode::CREATED,
+        Ok(pending) => ok_response(
+            StatusCode::ACCEPTED,
             &request_extensions,
-            ReplyCreateData {
-                post: to_post(post),
+            VerificationRequiredData {
+                verification_required: true,
+                verification: verification_prompt(
+                    &pending.verification_code,
+                    &pending.challenge_text,
+                    &pending.expires_at.to_rfc3339(),
+                    pending.max_attempts,
+                    pending.attempt_count,
+                ),
             },
         ),
         Err(err) => {
             error!(
-                error = %err,
+                error = ?err,
                 request_id = %request_id.0,
                 topic_id = %payload.topic_id,
-                "agent v1 reply create failed"
+                "agent v1 reply challenge failed"
             );
-            err_response::<ReplyCreateData>(
-                StatusCode::BAD_REQUEST,
+            err_response::<VerificationRequiredData>(
+                StatusCode::INTERNAL_SERVER_ERROR,
                 &request_extensions,
-                ApiError {
-                    code: ErrorCode::Validation,
-                    message: "failed to create reply".to_string(),
-                    details: Some(serde_json::json!({
-                        "topic_id": payload.topic_id,
-                        "reason": err.to_string(),
-                    })),
-                },
+                err,
             )
         }
     }
@@ -467,6 +573,19 @@ pub async fn create_reply(
 mod tests {
     use super::{reply_subject, to_post, to_topic};
     use btc_forum_rust::surreal::{SurrealPost, SurrealTopic};
+
+    #[test]
+    fn verification_prompt_reports_attempts_remaining() {
+        let prompt =
+            super::verification_prompt("avc_test", "LoBStEr", "2026-04-20T12:34:56Z", 3, 1);
+        assert_eq!(prompt.attempts_remaining, 2);
+    }
+
+    #[test]
+    fn admin_bypass_predicate_allows_admin_only() {
+        assert!(super::admin_bypass(true));
+        assert!(!super::admin_bypass(false));
+    }
 
     #[test]
     fn reply_subject_defaults_to_topic_subject() {

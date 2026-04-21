@@ -6,18 +6,26 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use btc_forum_rust::auth::AuthClaims;
-use btc_forum_shared::{Post, Topic};
+use btc_forum_rust::{auth::AuthClaims, services::ForumContext};
+use btc_forum_shared::{ApiError, ErrorCode, Post, Topic};
 
 use crate::agent::{
     auth::require_scope,
     request_id::RequestId,
     response::{err_response, ok_response},
+    verification::{VerificationActionKind, VerificationActionPreflight},
 };
-use crate::api::{auth::ensure_user_ctx, guards::enforce_rate, state::AppState};
+use crate::api::{
+    auth::ensure_user_ctx,
+    guards::{enforce_rate, ensure_board_access},
+    state::AppState,
+};
 
-const VERIFY_SCOPE: &str = "forum:verify:write";
+const TOPIC_WRITE_SCOPE: &str = "forum:topic:write";
+const REPLY_WRITE_SCOPE: &str = "forum:reply:write";
 const VERIFY_LEGACY_PERMISSIONS: &[&str] = &["manage_boards", "post_new", "post_reply_any"];
+const TOPIC_WRITE_LEGACY_PERMISSIONS: &[&str] = &["manage_boards", "post_new"];
+const REPLY_WRITE_LEGACY_PERMISSIONS: &[&str] = &["manage_boards", "post_reply_any"];
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
@@ -55,6 +63,103 @@ pub struct VerifyReplyData {
     pub post: Post,
 }
 
+fn require_verify_claims(
+    claims: &Option<AuthClaims>,
+) -> Result<&AuthClaims, (StatusCode, Json<btc_forum_shared::ApiError>)> {
+    require_scope(claims, TOPIC_WRITE_SCOPE, VERIFY_LEGACY_PERMISSIONS)
+        .or_else(|_| require_scope(claims, REPLY_WRITE_SCOPE, VERIFY_LEGACY_PERMISSIONS))
+}
+
+fn require_claims_for_action(
+    claims: &Option<AuthClaims>,
+    action_kind: VerificationActionKind,
+) -> Result<&AuthClaims, (StatusCode, Json<btc_forum_shared::ApiError>)> {
+    match action_kind {
+        VerificationActionKind::TopicCreate => {
+            require_scope(claims, TOPIC_WRITE_SCOPE, TOPIC_WRITE_LEGACY_PERMISSIONS)
+        }
+        VerificationActionKind::ReplyCreate => {
+            require_scope(claims, REPLY_WRITE_SCOPE, REPLY_WRITE_LEGACY_PERMISSIONS)
+        }
+    }
+}
+
+fn json_api_error(
+    (status, Json(error)): (StatusCode, Json<btc_forum_shared::ApiError>),
+) -> (StatusCode, ApiError) {
+    (status, error)
+}
+
+async fn authorize_verified_action(
+    state: &AppState,
+    claims: &AuthClaims,
+    ctx: &ForumContext,
+    action: VerificationActionPreflight,
+) -> Result<(), (StatusCode, ApiError)> {
+    require_claims_for_action(&Some(claims.clone()), action.action_kind())
+        .map_err(json_api_error)?;
+
+    match action {
+        VerificationActionPreflight::TopicCreate { payload } => {
+            ensure_board_access(state, ctx, &payload.board_id)
+                .await
+                .map_err(json_api_error)?;
+        }
+        VerificationActionPreflight::ReplyCreate { payload } => {
+            let topic = state
+                .surreal
+                .get_topic(&payload.topic_id)
+                .await
+                .map_err(|err| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ApiError {
+                            code: ErrorCode::Internal,
+                            message: "failed to load topic".to_string(),
+                            details: Some(serde_json::json!({
+                                "topic_id": &payload.topic_id,
+                                "reason": err.to_string(),
+                            })),
+                        },
+                    )
+                })?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        ApiError {
+                            code: ErrorCode::NotFound,
+                            message: "topic not found".to_string(),
+                            details: Some(serde_json::json!({
+                                "topic_id": &payload.topic_id,
+                            })),
+                        },
+                    )
+                })?;
+
+            if payload.board_id != topic.board_id {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    ApiError {
+                        code: ErrorCode::Validation,
+                        message: "board_id does not match topic".to_string(),
+                        details: Some(serde_json::json!({
+                            "topic_id": &payload.topic_id,
+                            "board_id": &payload.board_id,
+                            "expected_board_id": topic.board_id,
+                        })),
+                    },
+                ));
+            }
+
+            ensure_board_access(state, ctx, &payload.board_id)
+                .await
+                .map_err(json_api_error)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn request_extensions(request_id: &RequestId) -> Extensions {
     let mut extensions = Extensions::new();
     extensions.insert(request_id.clone());
@@ -68,7 +173,7 @@ pub async fn submit(
     Json(payload): Json<VerifyRequest>,
 ) -> impl IntoResponse {
     let request_extensions = request_extensions(&request_id);
-    let claims = match require_scope(&claims, VERIFY_SCOPE, VERIFY_LEGACY_PERMISSIONS) {
+    let claims = match require_verify_claims(&claims) {
         Ok(claims) => claims,
         Err((status, Json(error))) => {
             return err_response::<VerifyReplyData>(status, &request_extensions, error);
@@ -89,12 +194,25 @@ pub async fn submit(
         return err_response::<VerifyReplyData>(status, &request_extensions, error);
     }
 
+    let auth_state = state.clone();
+    let auth_claims = claims.clone();
+    let auth_ctx = ctx.clone();
+
     match crate::agent::verification::submit_verification(
-        &state,
+        state.forum_service.clone(),
+        &state.surreal,
         &ctx,
         &claims.sub,
         &payload.verification_code,
         &payload.answer,
+        move |action| {
+            let auth_state = auth_state.clone();
+            let auth_claims = auth_claims.clone();
+            let auth_ctx = auth_ctx.clone();
+            async move {
+                authorize_verified_action(&auth_state, &auth_claims, &auth_ctx, action).await
+            }
+        },
     )
     .await
     {
@@ -124,6 +242,8 @@ pub async fn submit(
 #[cfg(test)]
 mod tests {
     use super::VerifyRequest;
+    use crate::agent::verification::VerificationActionKind;
+    use btc_forum_rust::auth::AuthClaims;
 
     #[test]
     fn verify_request_deserializes_answer_payload() {
@@ -151,5 +271,52 @@ mod tests {
             json["verification"]["instructions"],
             "answer with exactly two decimal places"
         );
+    }
+
+    #[test]
+    fn verify_accepts_topic_write_scope() {
+        let claims = AuthClaims {
+            sub: "agent:test".into(),
+            exp: 1,
+            iat: 1,
+            scope: Some(vec!["forum:topic:write".into()]),
+            ..AuthClaims::default()
+        };
+
+        assert!(super::require_verify_claims(&Some(claims)).is_ok());
+    }
+
+    #[test]
+    fn topic_challenge_requires_topic_write_scope_at_verify_time() {
+        let claims = AuthClaims {
+            sub: "agent:test".into(),
+            exp: 1,
+            iat: 1,
+            scope: Some(vec!["forum:reply:write".into()]),
+            ..AuthClaims::default()
+        };
+
+        assert!(super::require_claims_for_action(
+            &Some(claims),
+            VerificationActionKind::TopicCreate
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn reply_challenge_requires_reply_write_scope_at_verify_time() {
+        let claims = AuthClaims {
+            sub: "agent:test".into(),
+            exp: 1,
+            iat: 1,
+            scope: Some(vec!["forum:topic:write".into()]),
+            ..AuthClaims::default()
+        };
+
+        assert!(super::require_claims_for_action(
+            &Some(claims),
+            VerificationActionKind::ReplyCreate
+        )
+        .is_err());
     }
 }

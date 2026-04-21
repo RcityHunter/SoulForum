@@ -642,6 +642,85 @@ impl ForumService for SurrealService {
         Ok(())
     }
 
+    fn consume_pending_verification_challenge(
+        &self,
+        verification_code: &str,
+        verified_at: chrono::DateTime<Utc>,
+    ) -> Result<Option<VerificationChallengeRecord>, ForumError> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ForumError::Internal(format!("runtime init failed: {e}")))?;
+        let verification_code = verification_code.to_string();
+        let pending_status =
+            Self::verification_challenge_status_value(VerificationChallengeStatus::Pending)
+                .to_string();
+        let verified_status =
+            Self::verification_challenge_status_value(VerificationChallengeStatus::Verified)
+                .to_string();
+        // Single-statement conditional update: only a still-pending, unexpired row is returned
+        // to the caller for downstream side effects.
+        let query = r#"
+                        UPDATE agent_verification_challenges
+                        SET status = $verified_status, verified_at = $verified_at
+                        WHERE verification_code = $verification_code
+                            AND status = $pending_status
+                            AND expires_at > $verified_at
+                        RETURN challenge_id, verification_code, agent_subject, action_kind, payload_json, challenge_text, expected_answer, generator_version, generator_seed, status, attempt_count, max_attempts, expires_at, verified_at, created_at;
+                        "#;
+        let mut response = match rt.block_on(async {
+            self.client
+                .query(query)
+                .bind(("verification_code", verification_code.clone()))
+                .bind(("pending_status", pending_status.clone()))
+                .bind(("verified_status", verified_status.clone()))
+                .bind(("verified_at", verified_at))
+                .await
+        }) {
+            Ok(response) => response,
+            Err(err) if Self::is_surreal_unauthorized(&err) => {
+                if let Err(reauth_err) = rt.block_on(async { reauth_from_env(&self.client).await })
+                {
+                    tracing::warn!(error = %reauth_err, "consume_pending_verification_challenge reauth failed, trying reconnect");
+                }
+                match rt.block_on(async {
+                    self.client
+                        .query(query)
+                        .bind(("verification_code", verification_code.clone()))
+                        .bind(("pending_status", pending_status.clone()))
+                        .bind(("verified_status", verified_status.clone()))
+                        .bind(("verified_at", verified_at))
+                        .await
+                }) {
+                    Ok(response) => response,
+                    Err(retry_err) if Self::is_surreal_unauthorized(&retry_err) => {
+                        tracing::warn!(error = %retry_err, "consume_pending_verification_challenge still unauthorized after reauth, rebuilding surreal client");
+                        let fresh = rt
+                            .block_on(async { connect_from_env().await })
+                            .map_err(|e| ForumError::Internal(e.to_string()))?;
+                        rt.block_on(async {
+                            fresh
+                                .query(query)
+                                .bind(("verification_code", verification_code.clone()))
+                                .bind(("pending_status", pending_status.clone()))
+                                .bind(("verified_status", verified_status.clone()))
+                                .bind(("verified_at", verified_at))
+                                .await
+                        })
+                        .map_err(|e| ForumError::Internal(e.to_string()))?
+                    }
+                    Err(retry_err) => return Err(ForumError::Internal(retry_err.to_string())),
+                }
+            }
+            Err(err) => return Err(ForumError::Internal(err.to_string())),
+        };
+
+        let mut rows: Vec<VerificationChallengeRow> = response.take(0).map_err(|e| {
+            ForumError::Internal(format!(
+                "consume_pending_verification_challenge response decode failed: {e}"
+            ))
+        })?;
+        rows.pop().map(TryInto::try_into).transpose()
+    }
+
     fn get_verification_failure_streak(
         &self,
         agent_subject: &str,
