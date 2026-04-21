@@ -1,8 +1,32 @@
+use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use btc_forum_rust::services::{BanAffects, BanCondition, BanRule, ForumError};
+use btc_forum_shared::{ApiError, ErrorCode, Post, Topic};
+
+pub enum VerifiedAction {
+    Topic { topic: Topic, first_post: Post },
+    Reply { post: Post },
+}
+
+pub async fn submit_verification<S, C>(
+    _state: &S,
+    _ctx: &C,
+    _subject: &str,
+    _verification_code: &str,
+    _answer: &str,
+) -> Result<VerifiedAction, (StatusCode, ApiError)> {
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        ApiError {
+            code: ErrorCode::Internal,
+            message: "verification submission not implemented".into(),
+            details: None,
+        },
+    ))
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum VerificationActionKind {

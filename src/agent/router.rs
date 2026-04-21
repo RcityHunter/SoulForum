@@ -7,7 +7,7 @@ use axum::{
 use crate::api::state::AppState;
 
 use super::{
-    handlers::{board, moderation, notification, pm, system, topic},
+    handlers::{board, moderation, notification, pm, system, topic, verify},
     request_id::inject_request_id,
 };
 
@@ -22,5 +22,6 @@ pub fn router() -> Router<AppState> {
         .route("/topics", get(topic::list).post(topic::create))
         .route("/topics/:topic_id", get(topic::get))
         .route("/replies", post(topic::create_reply))
+        .route("/verify", post(verify::submit))
         .layer(from_fn(inject_request_id))
 }
