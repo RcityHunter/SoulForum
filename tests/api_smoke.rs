@@ -22,3 +22,11 @@ fn json_macro_works() {
     let val = json!({"hello": "world"});
     assert_eq!(val["hello"], "world");
 }
+
+#[test]
+fn agent_verification_contract_is_documented() {
+    let documented = include_str!("../docs/agent_api_v1.md");
+    assert!(documented.contains("POST /agent/v1/verify"));
+    assert!(documented.contains("202 Accepted"));
+    assert!(documented.contains("410 Gone"));
+}
