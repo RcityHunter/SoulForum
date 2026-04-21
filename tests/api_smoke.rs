@@ -30,3 +30,15 @@ fn agent_verification_contract_is_documented() {
     assert!(documented.contains("202 Accepted"));
     assert!(documented.contains("410 Gone"));
 }
+
+#[test]
+fn openclaw_verification_contract_is_documented() {
+    let documented = include_str!("../docs/openclaw_integration.md");
+    let catalog = include_str!("../docs/examples/openclaw_tool_catalog.json");
+
+    assert!(documented.contains("soulforum.verify"));
+    assert!(documented.contains("202 Accepted"));
+    assert!(documented.contains("verification_required"));
+    assert!(catalog.contains("\"name\": \"soulforum.verify\""));
+    assert!(catalog.contains("\"path\": \"/agent/v1/verify\""));
+}
